@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
   <title>MAELSTROM — Digital Twin Simulation</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;600;700&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet" />
@@ -69,7 +69,7 @@
         </div>
         <!-- Alert Banner -->
         <div id="alertBanner" class="hidden">
-          <span id="alertText">⚠ DRONE SWARM DETECTED — RADAR CONTACT CONFIRMED</span>
+          <span id="alertText">⚠ DRONE SWARM DETECTED</span>
         </div>
         <!-- Cost Comparison Overlay -->
         <div id="costOverlay" class="hidden">
@@ -107,8 +107,9 @@
         <div id="control-panel">
           <div class="panel-label">MISSION CONTROL</div>
           <div id="controlContent">
+
             <!-- Phase 0: Standby -->
-            <div id="phase-standby" class="phase-panel active">
+            <div id="phase-standby" class="phase-panel active" style="display:flex">
               <div class="mission-brief">
                 <div class="brief-title">MISSION BRIEF</div>
                 <p class="brief-text">MAELSTROM is a solid-propellant rocket micro-missile designed to neutralise drone swarms with a single round. Radar-guided, optically-tracked, and capable of both hard-kill and soft-kill effects.</p>
@@ -124,67 +125,104 @@
             </div>
 
             <!-- Phase 1: Kill Mode Selection -->
-            <div id="phase-killmode" class="phase-panel">
+            <div id="phase-killmode" class="phase-panel" style="display:none">
               <div class="alert-header">⚠ THREAT DETECTED</div>
-              <p class="phase-desc">Drone swarm identified at <strong>320m</strong>. Select intercept method:</p>
+              <p class="phase-desc">Drone swarm at <strong>540m</strong>. Select intercept method:</p>
               <button id="hardKillBtn" class="btn-kill hard">
                 <div class="kill-icon">💥</div>
-                <div class="kill-label">HARD KILL</div>
-                <div class="kill-desc">Controlled fragmentation warhead — kinetic destruction</div>
+                <div>
+                  <div class="kill-label">HARD KILL</div>
+                  <div class="kill-desc">Fragmentation warhead — kinetic destruction</div>
+                </div>
               </button>
               <button id="softKillBtn" class="btn-kill soft">
                 <div class="kill-icon">🕸</div>
-                <div class="kill-label">SOFT KILL</div>
-                <div class="kill-desc">Carbon fibre burst — entanglement & motor kill</div>
+                <div>
+                  <div class="kill-label">SOFT KILL</div>
+                  <div class="kill-desc">Carbon fibre burst — entanglement & motor kill</div>
+                </div>
               </button>
             </div>
 
-            <!-- Phase 2: Engine Cross-Section -->
-            <div id="phase-engine" class="phase-panel">
-              <canvas id="engineCanvas" width="340" height="200"></canvas>
-              <div class="phase-description" id="engineDesc">
-                <div class="desc-title">SOLID PROPELLANT ROCKET ENGINE</div>
-                <!-- EDITABLE: Engine description below -->
-                <p>MAELSTROM's aft 300mm houses a composite solid-propellant grain — a HTPB/AP/Al formulation delivering high specific impulse with zero pre-launch preparation. The propellant burns from the core outward in a regressive grain pattern, generating a consistent high-thrust impulse that accelerates the round to intercept velocity in under 2 seconds. Nozzle throat and expansion ratio are optimised for sea-level performance.</p>
+            <!-- Phase 2: Engine Stage (pre-flight review) -->
+            <div id="phase-engine-launch" class="phase-panel" style="display:none">
+              <div class="launch-stage-title">SOLID PROPELLANT ENGINE — PRE-FLIGHT</div>
+              <!-- Engine canvas -->
+              <canvas id="engineCanvas" width="300" height="180"></canvas>
+              <div class="launch-status-bar">
+                <div class="launch-status-item">
+                  <div class="launch-dot" id="ldot-ignition"></div>
+                  <span>IGNITION SEQUENCE — NOMINAL</span>
+                </div>
+                <div class="launch-status-item">
+                  <div class="launch-dot" id="ldot-guidance"></div>
+                  <span>GUIDANCE INS LOCK — NOMINAL</span>
+                </div>
+                <div class="launch-status-item">
+                  <div class="launch-dot" id="ldot-fins"></div>
+                  <span>CONTROL SURFACES — NOMINAL</span>
+                </div>
+                <div class="launch-status-item">
+                  <div class="launch-dot" id="ldot-seeker"></div>
+                  <span>LWIR SEEKER — ACQUIRING</span>
+                </div>
+              </div>
+              <p style="font-size:11px;color:var(--text);font-family:var(--font-body);line-height:1.5">
+                HTPB/AP/Al propellant grain burning from the star-bore core outward. Review system status, then proceed when ready.
+              </p>
+              <button id="proceedBtn" class="btn-proceed" disabled>
+                ▶ PROCEED TO INTERCEPT
+              </button>
+            </div>
+
+            <!-- Phase 3: In-Flight (engine + cv tracking shown here) -->
+            <div id="phase-flight" class="phase-panel" style="display:none">
+              <!-- Canvas swapped dynamically by PANELS.showPanelCanvas -->
+              <canvas id="engineCanvas2" width="300" height="160" style="display:none"></canvas>
+              <canvas id="trackingCanvas" width="300" height="160"></canvas>
+              <div id="flightPanelDesc" style="font-size:11px;color:var(--text);font-family:var(--font-body);line-height:1.5;padding-top:8px;border-top:1px solid var(--border)">
+                Missile in flight. LWIR seeker acquiring swarm centroid.
               </div>
             </div>
 
-            <!-- Phase 3: Control Fin Aerofoil -->
-            <div id="phase-aerofoil" class="phase-panel">
-              <canvas id="aerofoilCanvas" width="340" height="180"></canvas>
-              <div class="phase-description" id="aerofoilDesc">
-                <div class="desc-title">ACTIVE CONTROL FIN AEROFOIL</div>
-                <!-- EDITABLE: Aerofoil description below -->
-                <p>Four rectangular all-moving control fins at the aft section provide 3-axis manoeuvring authority. The NACA 0008 symmetric profile minimises drag at supersonic transitions while maintaining sufficient lift for rapid course corrections. Actuated by miniaturised electromechanical servos, they respond within 15ms — enabling the tight pursuit curves needed for a closing, evasive drone cluster.</p>
+            <!-- Phase 4: Post-sim feature viewer -->
+            <div id="phase-post-sim" class="post-sim-panel" style="display:none">
+              <div class="post-sim-title">POST-ENGAGEMENT ANALYSIS</div>
+              <div class="feature-btn-row">
+                <button id="feat-engine" class="btn-feature">
+                  <span class="feat-icon">🔥</span>
+                  ENGINE
+                </button>
+                <button id="feat-aerofoil" class="btn-feature">
+                  <span class="feat-icon">✈</span>
+                  AEROFOIL
+                </button>
+                <button id="feat-tracking" class="btn-feature">
+                  <span class="feat-icon">👁</span>
+                  TRACKING
+                </button>
+                <button id="feat-payload" class="btn-feature">
+                  <span class="feat-icon">💣</span>
+                  PAYLOAD
+                </button>
               </div>
+              <div class="feature-canvas-area">
+                <!-- canvases shown/hidden by PANELS.showPanelCanvas -->
+                <canvas id="postEngineCanvas"   width="300" height="160"></canvas>
+                <canvas id="postAerofoilCanvas" width="300" height="160" style="display:none"></canvas>
+                <canvas id="postTrackingCanvas" width="300" height="160" style="display:none"></canvas>
+                <canvas id="postPayloadCanvas"  width="300" height="160" style="display:none"></canvas>
+              </div>
+              <p id="postSimDesc" class="feature-desc"></p>
             </div>
 
-            <!-- Phase 4: Optical Tracking -->
-            <div id="phase-tracking" class="phase-panel">
-              <canvas id="trackingCanvas" width="340" height="200"></canvas>
-              <div class="phase-description" id="trackingDesc">
-                <div class="desc-title">OPTICAL TRACKING & GUIDANCE</div>
-                <!-- EDITABLE: Tracking description below -->
-                <p>An onboard LWIR sensor feeds a lightweight convolutional neural network running at 120fps on an edge TPU. Each drone is detected and assigned a bounding box; the centroid of the cluster bounding box becomes the aim point. Proportional navigation guidance drives the control fins to null the line-of-sight rate, ensuring impact at the geometric centre of the swarm for maximum coverage.</p>
-              </div>
-            </div>
-
-            <!-- Phase 5: Payload Deploy -->
-            <div id="phase-payload" class="phase-panel">
-              <canvas id="payloadCanvas" width="340" height="200"></canvas>
-              <div class="phase-description" id="payloadDesc">
-                <div class="desc-title" id="payloadTitle">WARHEAD DEPLOYMENT</div>
-                <!-- EDITABLE: Payload description below — updated dynamically -->
-                <p id="payloadDescText">High-density tungsten fragmentation sleeve surrounds the warhead core. On fuze trigger, a precisely timed explosive ring shears the sleeve into hundreds of high-velocity fragments with a controlled dispersion cone matched to the swarm spread. Fragments achieve > 400 m/s lateral velocity, defeating drone airframes and rotor assemblies within a 15m radius sphere.</p>
-              </div>
-            </div>
           </div>
         </div>
 
         <!-- BOTTOM RIGHT: Trajectory Panel -->
         <div id="trajectory-panel">
-          <div class="panel-label">TRAJECTORY & TELEMETRY</div>
-          <canvas id="trajCanvas" width="340" height="160"></canvas>
+          <div class="panel-label">TRAJECTORY &amp; TELEMETRY</div>
+          <canvas id="trajCanvas" width="300" height="100"></canvas>
           <div class="traj-stats">
             <div class="traj-stat"><span class="ts-label">TIME OF FLIGHT</span><span class="ts-val" id="tofVal">0.0s</span></div>
             <div class="traj-stat"><span class="ts-label">DISTANCE</span><span class="ts-val" id="distVal">0m</span></div>
@@ -195,7 +233,6 @@
     </div>
   </div>
 
-  <!-- Three.js from CDN -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
   <script src="sim.js"></script>
   <script src="panels.js"></script>
