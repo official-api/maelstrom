@@ -65,13 +65,7 @@ const PANELS = (() => {
   let engineCanvas, engineCtx;
   let engineParticles = [];
 
-  function initEngine() {
-    engineCanvas = document.getElementById('engineCanvas');
-    if (!engineCanvas) return;
-    engineCtx = setupHiDPI(engineCanvas);
-    // Seed hot gas particles
-    engineParticles = [];
-  }
+  function initEngine() { /* lazy-init via getCtxForFeature */ }
 
   function drawEngine(dt) {
     if (!engineCtx) return;
@@ -887,11 +881,7 @@ const PANELS = (() => {
     { x: 0.50, y: 0.58 }, { x: 0.44, y: 0.47 }, { x: 0.35, y: 0.38 },
   ];
 
-  function initTracking() {
-    trackCanvas = document.getElementById('trackingCanvas');
-    if (!trackCanvas) return;
-    trackCtx = setupHiDPI(trackCanvas);
-  }
+  function initTracking() { /* lazy-init via getCtxForFeature */ }
 
   function drawTracking(dt) {
     if (!trackCtx) return;
@@ -1043,11 +1033,7 @@ const PANELS = (() => {
   let payloadCanvas, payloadCtx;
   let currentKillMode = 'hard';
 
-  function initPayload() {
-    payloadCanvas = document.getElementById('payloadCanvas');
-    if (!payloadCanvas) return;
-    payloadCtx = setupHiDPI(payloadCanvas);
-  }
+  function initPayload() { /* lazy-init via getCtxForFeature */ }
 
   function setPayloadMode(mode) { currentKillMode = mode; payloadT = 0; }
 
@@ -1398,22 +1384,81 @@ const PANELS = (() => {
     ctx.fillText('TOP-DOWN TRAJECTORY', 6, 11);
   }
 
+  /* ─── Canvas registry ─── */
+  // Maps feature name -> all possible canvas IDs to search
+  const canvasMap = {
+    engine:   ['engineCanvas', 'postEngineCanvas'],
+    aerofoil: ['aerofoilCanvas', 'postAerofoilCanvas'],
+    tracking: ['trackingCanvas', 'postTrackingCanvas'],
+    payload:  ['payloadCanvas', 'postPayloadCanvas'],
+  };
+
+  // Context registry: feature -> ctx
+  let ctxRegistry = {};
+
+  function getCtxForFeature(feature) {
+    // Find the first visible canvas for this feature
+    const ids = canvasMap[feature] || [];
+    for (const id of ids) {
+      const c = document.getElementById(id);
+      if (c && c.offsetParent !== null) {
+        // Ensure ctx is set up for this canvas
+        if (!ctxRegistry[id]) {
+          ctxRegistry[id] = setupHiDPI(c);
+        }
+        return { ctx: ctxRegistry[id], canvas: c };
+      }
+    }
+    return null;
+  }
+
   /* ─── Public API ─── */
   function init() {
-    initEngine();
-    initAerofoil();
-    initTracking();
-    initPayload();
+    // Pre-init all known canvases that exist
+    const allIds = Object.values(canvasMap).flat();
+    allIds.forEach(id => {
+      const c = document.getElementById(id);
+      if (c && !ctxRegistry[id]) {
+        ctxRegistry[id] = setupHiDPI(c);
+      }
+    });
     initTrajectory();
+    // Also init aerofoil state
+    aerofoilT = 0;
+  }
+
+  function showPanelCanvas(feature) {
+    // Hide all canvases for all features, show only the ones for this feature
+    // In flight phase: show trackingCanvas
+    // In engine-launch phase: show engineCanvas
+    // In post-sim phase: show postXxxCanvas
+    // We just let the CSS/HTML visibility handle it — this function triggers re-init if needed
+    const ids = canvasMap[feature] || [];
+    ids.forEach(id => {
+      const c = document.getElementById(id);
+      if (c) {
+        if (!ctxRegistry[id]) ctxRegistry[id] = setupHiDPI(c);
+      }
+    });
   }
 
   function update(dt, activePhase, pts, rocketPos, swarmCenter) {
-    if (activePhase === 'engine')   drawEngine(dt);
-    else if (activePhase === 'aerofoil') drawAerofoil(dt);
-    else if (activePhase === 'tracking') drawTracking(dt);
-    else if (activePhase === 'payload')  drawPayload(dt);
+    if (activePhase === 'engine') {
+      // Draw to whichever engine canvas is currently visible
+      const r = getCtxForFeature('engine');
+      if (r) { engineCtx = r.ctx; engineCanvas = r.canvas; drawEngine(dt); }
+    } else if (activePhase === 'aerofoil') {
+      const r = getCtxForFeature('aerofoil');
+      if (r) { aerofoilCtx = r.ctx; aerofoilCanvas = r.canvas; drawAerofoil(dt); }
+    } else if (activePhase === 'tracking') {
+      const r = getCtxForFeature('tracking');
+      if (r) { trackCtx = r.ctx; trackCanvas = r.canvas; drawTracking(dt); }
+    } else if (activePhase === 'payload') {
+      const r = getCtxForFeature('payload');
+      if (r) { payloadCtx = r.ctx; payloadCanvas = r.canvas; drawPayload(dt); }
+    }
     drawTrajectory(pts, rocketPos, swarmCenter);
   }
 
-  return { init, update, setPayloadMode };
+  return { init, update, setPayloadMode, showPanelCanvas };
 })();
