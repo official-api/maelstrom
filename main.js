@@ -1,44 +1,45 @@
 /* ═══════════════════════════════════════════
-   MAELSTROM — MAIN ORCHESTRATOR
-   Manages simulation state, UI transitions,
-   HUD updates, and the panel draw loop.
+   MAELSTROM — MAIN ORCHESTRATOR v3
+   New flow:
+     standby → killSelect → engineStage (engine panel + proceed) →
+     tracking (flight panel: engine then cv) →
+     done (post-sim feature viewer)
    ═══════════════════════════════════════════ */
 
 (() => {
   /* ─── State ─── */
-  let simPhase = 'standby';   // standby | approach | killSelect | launch | flight | tracking | intercept | done
+  let simPhase = 'standby';
   let killMode = null;
   let activePanel = null;
   let panelPhaseTimer = 0;
   let lastT = performance.now();
   let missionStartTime = null;
   let trajectoryPoints = [];
+  let postSimFeature = null; // 'engine' | 'aerofoil' | 'tracking' | 'payload'
+  let rocketFiredTime = null;
+  let engineStageDone = false;
 
   /* ─── DOM Refs ─── */
   const el = id => document.getElementById(id);
-
-  const phases = {
-    standby:   el('phase-standby'),
-    killmode:  el('phase-killmode'),
-    engine:    el('phase-engine'),
-    aerofoil:  el('phase-aerofoil'),
-    tracking:  el('phase-tracking'),
-    payload:   el('phase-payload')
-  };
 
   /* ─── Init ─── */
   function init() {
     SIM.init('simCanvas');
     PANELS.init();
 
-    // Wire buttons
     el('beginAttackBtn').addEventListener('click', onBeginAttack);
     el('hardKillBtn').addEventListener('click', () => onKillSelect('hard'));
     el('softKillBtn').addEventListener('click', () => onKillSelect('soft'));
     el('replayBtn').addEventListener('click', onReplay);
     el('replayBtn2').addEventListener('click', onReplay);
+    el('proceedBtn').addEventListener('click', onProceedToFlight);
 
-    // SIM callbacks
+    // Post-sim feature buttons
+    ['engine','aerofoil','tracking','payload'].forEach(f => {
+      const btn = el(`feat-${f}`);
+      if (btn) btn.addEventListener('click', () => showPostSimFeature(f));
+    });
+
     SIM.onAlert(onRadarAlert);
     SIM.onRocketLaunch(onRocketLaunched);
     SIM.onIntercept(onInterceptHit);
@@ -48,12 +49,21 @@
     startLoop();
   }
 
-  /* ─── Panel visibility ─── */
+  /* ─── Phase visibility ─── */
   function showPhase(name) {
-    Object.values(phases).forEach(p => {
-      if (p) p.classList.remove('active');
+    const allPhases = ['standby','killmode','engine-launch','flight','post-sim'];
+    allPhases.forEach(p => {
+      const el2 = document.getElementById(`phase-${p}`);
+      if (el2) {
+        el2.classList.remove('active');
+        el2.style.display = 'none';
+      }
     });
-    if (phases[name]) phases[name].classList.add('active');
+    const target = document.getElementById(`phase-${name}`);
+    if (target) {
+      target.style.display = 'flex';
+      target.classList.add('active');
+    }
   }
 
   /* ─── Button handlers ─── */
@@ -69,43 +79,72 @@
   function onRadarAlert() {
     simPhase = 'killSelect';
     el('alertBanner').classList.remove('hidden');
-    el('alertText').textContent = '⚠ DRONE SWARM DETECTED — RADAR CONTACT CONFIRMED — SELECT INTERCEPT MODE';
+    el('alertText').textContent = '⚠ DRONE SWARM DETECTED — SELECT INTERCEPT MODE';
     setStatus('THREAT DETECTED', true);
     showPhase('killmode');
     setHud('hudSys', 'THREAT');
-    setHud('hudTargets', '10');
-    setHud('hudRange', '320');
+    setHud('hudTargets', '14');
+    setHud('hudRange', '540');
     el('replayBtn').classList.remove('hidden');
   }
 
   function onKillSelect(mode) {
     killMode = mode;
-    simPhase = 'launch';
+    simPhase = 'engineStage';
     el('alertBanner').classList.add('hidden');
     el('hudKillMode').textContent = mode.toUpperCase();
-
-    setStatus('MISSILE ARMED — LAUNCHING', true);
-    showPhase('engine');
-    activePanel = 'engine';
-    panelPhaseTimer = 0;
-
-    // Update payload panel for selected mode
     PANELS.setPayloadMode(mode);
-    updatePayloadDesc(mode);
 
-    SIM.launchRocket(mode);
+    // Show engine stage panel — launch happens here but rocket doesn't fly yet
+    setStatus('ENGINE IGNITION — REVIEWING SYSTEMS', false);
+    showPhase('engine-launch');
+
+    // Start the engine canvas animation immediately
+    activePanel = 'engine';
+    PANELS.showPanelCanvas('engine');
+
+    // Sequence the status dots over 2 seconds
+    sequenceLaunchStatus();
+
+    // Fire the rocket engine (visually) but hold flight until user clicks proceed
+    engineStageDone = false;
+    SIM.armRocket(mode);   // new API: shows rocket with engine firing but doesn't move
+  }
+
+  function sequenceLaunchStatus() {
+    const dots = ['ldot-ignition','ldot-guidance','ldot-fins','ldot-seeker'];
+    const delays = [300, 800, 1400, 2000];
+    dots.forEach((id, i) => {
+      setTimeout(() => {
+        const d = el(id);
+        if (d) d.classList.add(i < 3 ? 'on' : 'warn');
+        if (i === dots.length - 1) {
+          engineStageDone = true;
+          const btn = el('proceedBtn');
+          if (btn) btn.disabled = false;
+        }
+      }, delays[i]);
+    });
+  }
+
+  function onProceedToFlight() {
+    if (!engineStageDone) return;
+    simPhase = 'flight';
+    panelPhaseTimer = 0;
+    rocketFiredTime = performance.now();
+    setStatus('MISSILE IN FLIGHT', false);
+    showPhase('flight');
+    activePanel = 'engine';
+    PANELS.showPanelCanvas('engine');
+    SIM.fireRocket(); // new API: actually launch the rocket toward swarm
   }
 
   function onRocketLaunched() {
-    simPhase = 'flight';
-    setStatus('MISSILE IN FLIGHT', false);
+    // Called when rocket physically fires in 3D (inside SIM.fireRocket)
   }
 
   function onInterceptHit(mode) {
     simPhase = 'intercept';
-    activePanel = 'payload';
-    panelPhaseTimer = 0;
-    showPhase('payload');
     setStatus('INTERCEPT — WARHEAD DEPLOYED', true);
     el('alertBanner').classList.remove('hidden');
     const modeText = mode === 'hard' ? 'HARD KILL — FRAGMENTATION DEPLOYED' : 'SOFT KILL — CARBON FIBRE DEPLOYED';
@@ -119,17 +158,47 @@
     setTimeout(() => {
       el('costOverlay').classList.remove('hidden');
       setStatus('ENGAGEMENT COMPLETE', false);
-    }, 1500);
+      // Switch right panel to post-sim
+      showPhase('post-sim');
+      // Default to engine feature
+      showPostSimFeature('engine');
+    }, 1800);
+  }
+
+  function showPostSimFeature(feature) {
+    postSimFeature = feature;
+    activePanel = feature;
+    PANELS.showPanelCanvas(feature);
+
+    // Update button active state
+    ['engine','aerofoil','tracking','payload'].forEach(f => {
+      const btn = el(`feat-${f}`);
+      if (btn) btn.classList.toggle('active', f === feature);
+    });
+
+    // Show description
+    const descs = {
+      engine:   'SOLID PROPELLANT ROCKET ENGINE — HTPB/AP/Al composite grain delivers sustained high thrust in a regressive burn pattern.',
+      aerofoil: 'CONTROL FIN AEROFOIL — NACA 0008 symmetric profile, actuated within 15ms for proportional navigation course corrections.',
+      tracking: 'OPTICAL TRACKING — LWIR seeker at 120fps, CNN-based swarm detection, proportional-navigation guidance to centroid.',
+      payload:  killMode === 'hard'
+        ? 'HARD KILL — Tungsten fragmentation sleeve: >400 m/s lateral fragment velocity, 15m kill radius.'
+        : 'SOFT KILL — Carbon fibre filament burst: 20m entanglement radius, rotor jam + electronics shorts.'
+    };
+    const descEl = el('postSimDesc');
+    if (descEl) descEl.textContent = descs[feature] || '';
   }
 
   function onReplay() {
-    // Reset everything
     simPhase = 'standby';
     killMode = null;
     activePanel = null;
     panelPhaseTimer = 0;
     trajectoryPoints = [];
     missionStartTime = null;
+    rocketFiredTime = null;
+    engineStageDone = false;
+    postSimFeature = null;
 
     el('alertBanner').classList.add('hidden');
     el('alertBanner').style.borderColor = '';
@@ -147,6 +216,14 @@
     el('speedVal').textContent = '0 m/s';
     el('missionTimer').textContent = 'T+00:00';
 
+    // Reset launch status dots
+    ['ldot-ignition','ldot-guidance','ldot-fins','ldot-seeker'].forEach(id => {
+      const d = el(id);
+      if (d) d.classList.remove('on','warn');
+    });
+    const proceedBtn = el('proceedBtn');
+    if (proceedBtn) proceedBtn.disabled = true;
+
     setStatus('SYSTEM NOMINAL', false);
     showPhase('standby');
     SIM.resetSim();
@@ -158,61 +235,58 @@
       requestAnimationFrame(loop);
       const dt = Math.min((now - lastT) / 1000, 0.05);
       lastT = now;
-
       update(dt, now);
     }
     requestAnimationFrame(loop);
   }
 
   function update(dt, now) {
-    // Update mission timer
+    // Mission timer
     if (missionStartTime !== null) {
       const elapsed = (now - missionStartTime) / 1000;
       const mins = Math.floor(elapsed / 60);
       const secs = Math.floor(elapsed % 60);
-      el('missionTimer').textContent = `T+${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+      el('missionTimer').textContent = `T+${String(mins).padStart(2,'0')}:${String(secs).padStart(2,'0')}`;
     }
 
-    panelPhaseTimer += dt;
-
-    // Advance panel phases during flight
-    if (simPhase === 'flight' || simPhase === 'launch') {
-      if (panelPhaseTimer < 3.5) {
-        if (activePanel !== 'engine') { activePanel = 'engine'; showPhase('engine'); }
-      } else if (panelPhaseTimer < 7.0) {
-        if (activePanel !== 'aerofoil') { activePanel = 'aerofoil'; showPhase('aerofoil'); }
+    // During flight: cycle engine → cv tracking panels
+    if (simPhase === 'flight') {
+      panelPhaseTimer += dt;
+      if (panelPhaseTimer < 6) {
+        if (activePanel !== 'engine') { activePanel = 'engine'; PANELS.showPanelCanvas('engine'); }
       } else {
-        if (activePanel !== 'tracking') { activePanel = 'tracking'; showPhase('tracking'); }
+        if (activePanel !== 'tracking') { activePanel = 'tracking'; PANELS.showPanelCanvas('tracking'); }
       }
     }
 
-    // Update telemetry HUD
+    // Telemetry HUD
     const rPos = SIM.getRocketPos();
     const swarm = SIM.getSwarmCenter();
 
-    if (simPhase === 'flight' || simPhase === 'launch') {
+    if (simPhase === 'flight' || simPhase === 'engineStage') {
       const dist = rPos.distanceTo(swarm);
-      el('hudRange').textContent = Math.round(dist * 5); // scale for display
+      el('hudRange').textContent = Math.round(dist * 5);
       el('hudAlt').textContent = Math.round(rPos.y * 2);
 
-      // Estimate speed from trajectory
       const pts = SIM.getTrajectoryPoints();
       trajectoryPoints = pts;
       if (pts.length > 2) {
         const last = pts[pts.length - 1];
         const prev = pts[pts.length - 2];
-        const vel = last.distanceTo(prev) / dt;
+        const vel = last.distanceTo(prev) / Math.max(dt, 0.001);
         const dispVel = Math.min(Math.round(vel * 15), 420);
         el('hudVel').textContent = dispVel;
         el('speedVal').textContent = `${dispVel} m/s`;
         el('distVal').textContent = `${Math.round(pts.length * 1.5)}m`;
       }
 
-      const elapsed = missionStartTime ? (performance.now() - missionStartTime) / 1000 : 0;
-      el('tofVal').textContent = `${elapsed.toFixed(1)}s`;
+      if (rocketFiredTime !== null) {
+        const elapsed = (now - rocketFiredTime) / 1000;
+        el('tofVal').textContent = `${elapsed.toFixed(1)}s`;
+      }
     }
 
-    // Draw right panels
+    // Draw panels
     PANELS.update(dt, activePanel, trajectoryPoints, rPos, swarm);
   }
 
@@ -223,26 +297,9 @@
     const dot = el('systemStatus');
     dot.className = 'status-dot' + (isAlert ? ' alert' : '');
   }
-
   function setHud(id, val) {
     const e = el(id);
     if (e) e.textContent = val;
-  }
-
-  function updatePayloadDesc(mode) {
-    const title = el('payloadTitle');
-    const desc = el('payloadDescText');
-    if (!title || !desc) return;
-
-    if (mode === 'hard') {
-      title.textContent = 'HARD KILL — FRAGMENTATION WARHEAD';
-      /* EDITABLE: Hard Kill Payload description */
-      desc.textContent = 'High-density tungsten fragmentation sleeve surrounds the warhead core. On fuze trigger, a precisely timed explosive ring shears the sleeve into hundreds of high-velocity fragments with a controlled dispersion cone matched to the swarm spread. Fragments achieve > 400 m/s lateral velocity, defeating drone airframes and rotor assemblies within a 15m radius sphere.';
-    } else {
-      title.textContent = 'SOFT KILL — CARBON FIBRE BURST';
-      /* EDITABLE: Soft Kill Payload description */
-      desc.textContent = 'A compressed carbon-fibre filament package is ejected by a small pyrotechnic charge. The filament cloud expands to fill a 20m radius sphere in milliseconds — individual fibres entangle rotor blades and short-circuit exposed electronics. No energetic material is deposited on the ground, making this ideal for urban or complex terrain where collateral damage must be minimised.';
-    }
   }
 
   /* ─── Bootstrap ─── */
