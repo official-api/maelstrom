@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MAELSTROM — Digital Twin Simulation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Barlow+Condensed:wght@300;400;600;700&family=Barlow:wght@300;400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- Header Bar -->
+    <header id="header">
+      <div class="header-left">
+        <div class="logo-mark">M</div>
+        <div class="header-titles">
+          <span class="title-main">MAELSTROM</span>
+          <span class="title-sub">DIGITAL TWIN SIMULATION v1.0</span>
+        </div>
+      </div>
+      <div class="header-center">
+        <div class="status-row">
+          <div class="status-dot" id="systemStatus"></div>
+          <span class="status-text" id="statusText">SYSTEM NOMINAL</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <div class="time-display" id="missionTimer">T+00:00</div>
+        <div class="classification">DEMO BUILD</div>
+      </div>
+    </header>
+
+    <!-- Main Layout -->
+    <div id="layout">
+      <!-- LEFT: Main 3D Simulation Viewport -->
+      <div id="viewport-panel">
+        <div class="panel-label">PRIMARY ENGAGEMENT VIEW</div>
+        <canvas id="simCanvas"></canvas>
+        <div id="hud-overlay">
+          <div class="hud-corner tl">
+            <div class="hud-line">SYS: <span id="hudSys">STANDBY</span></div>
+            <div class="hud-line">RNG: <span id="hudRange">---</span> m</div>
+            <div class="hud-line">TGTS: <span id="hudTargets">0</span></div>
+          </div>
+          <div class="hud-corner tr">
+            <div class="hud-line">KILL MODE: <span id="hudKillMode">NONE</span></div>
+            <div class="hud-line">ROUND: <span id="hudRound">1</span></div>
+          </div>
+          <div class="hud-corner bl">
+            <div class="hud-line">LAT: 1.3521° N</div>
+            <div class="hud-line">LON: 103.8198° E</div>
+          </div>
+          <div class="hud-corner br">
+            <div class="hud-line">ALT: <span id="hudAlt">---</span> m AGL</div>
+            <div class="hud-line">VEL: <span id="hudVel">---</span> m/s</div>
+          </div>
+          <!-- Reticle -->
+          <div id="reticle">
+            <svg viewBox="0 0 80 80" width="80" height="80">
+              <circle cx="40" cy="40" r="30" fill="none" stroke="#00ff88" stroke-width="1" opacity="0.5"/>
+              <line x1="40" y1="4" x2="40" y2="20" stroke="#00ff88" stroke-width="1.5"/>
+              <line x1="40" y1="60" x2="40" y2="76" stroke="#00ff88" stroke-width="1.5"/>
+              <line x1="4" y1="40" x2="20" y2="40" stroke="#00ff88" stroke-width="1.5"/>
+              <line x1="60" y1="40" x2="76" y2="40" stroke="#00ff88" stroke-width="1.5"/>
+              <circle cx="40" cy="40" r="3" fill="#00ff88" opacity="0.8"/>
+            </svg>
+          </div>
+        </div>
+        <!-- Alert Banner -->
+        <div id="alertBanner" class="hidden">
+          <span id="alertText">⚠ DRONE SWARM DETECTED — RADAR CONTACT CONFIRMED</span>
+        </div>
+        <!-- Cost Comparison Overlay -->
+        <div id="costOverlay" class="hidden">
+          <div class="cost-box">
+            <div class="cost-title">ENGAGEMENT COST ANALYSIS</div>
+            <div class="cost-grid">
+              <div class="cost-item threat">
+                <div class="cost-label">FPV DRONE UNIT COST</div>
+                <div class="cost-value red">$800</div>
+                <div class="cost-note">per military FPV drone</div>
+              </div>
+              <div class="cost-item conventional">
+                <div class="cost-label">PATRIOT INTERCEPTOR</div>
+                <div class="cost-value red">$3,400,000</div>
+                <div class="cost-note">per conventional missile — 1 drone killed</div>
+              </div>
+              <div class="cost-item maelstrom">
+                <div class="cost-label">MAELSTROM ROUND</div>
+                <div class="cost-value green">$8,000</div>
+                <div class="cost-note">per micro-missile — entire swarm neutralised</div>
+              </div>
+            </div>
+            <div class="cost-ratio">
+              <span class="ratio-label">COST EFFECTIVENESS RATIO</span>
+              <span class="ratio-value">425× MORE COST-EFFECTIVE</span>
+            </div>
+            <button id="replayBtn2" class="btn-replay">↺ REPLAY SIMULATION</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT COLUMN -->
+      <div id="right-column">
+        <!-- TOP RIGHT: Controls & Info Panel -->
+        <div id="control-panel">
+          <div class="panel-label">MISSION CONTROL</div>
+          <div id="controlContent">
+            <!-- Phase 0: Standby -->
+            <div id="phase-standby" class="phase-panel active">
+              <div class="mission-brief">
+                <div class="brief-title">MISSION BRIEF</div>
+                <p class="brief-text">MAELSTROM is a solid-propellant rocket micro-missile designed to neutralise drone swarms with a single round. Radar-guided, optically-tracked, and capable of both hard-kill and soft-kill effects.</p>
+              </div>
+              <div class="spec-grid">
+                <div class="spec-item"><span class="spec-label">LENGTH</span><span class="spec-value">840 mm</span></div>
+                <div class="spec-item"><span class="spec-label">NOSE RADIUS</span><span class="spec-value">45 mm</span></div>
+                <div class="spec-item"><span class="spec-label">ENGINE</span><span class="spec-value">Solid Prop.</span></div>
+                <div class="spec-item"><span class="spec-label">FINS</span><span class="spec-value">4+4 Config</span></div>
+              </div>
+              <button id="beginAttackBtn" class="btn-primary pulse">▶ BEGIN ATTACK SIMULATION</button>
+              <button id="replayBtn" class="btn-secondary hidden">↺ REPLAY</button>
+            </div>
+
+            <!-- Phase 1: Kill Mode Selection -->
+            <div id="phase-killmode" class="phase-panel">
+              <div class="alert-header">⚠ THREAT DETECTED</div>
+              <p class="phase-desc">Drone swarm identified at <strong>320m</strong>. Select intercept method:</p>
+              <button id="hardKillBtn" class="btn-kill hard">
+                <div class="kill-icon">💥</div>
+                <div class="kill-label">HARD KILL</div>
+                <div class="kill-desc">Controlled fragmentation warhead — kinetic destruction</div>
+              </button>
+              <button id="softKillBtn" class="btn-kill soft">
+                <div class="kill-icon">🕸</div>
+                <div class="kill-label">SOFT KILL</div>
+                <div class="kill-desc">Carbon fibre burst — entanglement & motor kill</div>
+              </button>
+            </div>
+
+            <!-- Phase 2: Engine Cross-Section -->
+            <div id="phase-engine" class="phase-panel">
+              <canvas id="engineCanvas" width="340" height="200"></canvas>
+              <div class="phase-description" id="engineDesc">
+                <div class="desc-title">SOLID PROPELLANT ROCKET ENGINE</div>
+                <!-- EDITABLE: Engine description below -->
+                <p>MAELSTROM's aft 300mm houses a composite solid-propellant grain — a HTPB/AP/Al formulation delivering high specific impulse with zero pre-launch preparation. The propellant burns from the core outward in a regressive grain pattern, generating a consistent high-thrust impulse that accelerates the round to intercept velocity in under 2 seconds. Nozzle throat and expansion ratio are optimised for sea-level performance.</p>
+              </div>
+            </div>
+
+            <!-- Phase 3: Control Fin Aerofoil -->
+            <div id="phase-aerofoil" class="phase-panel">
+              <canvas id="aerofoilCanvas" width="340" height="180"></canvas>
+              <div class="phase-description" id="aerofoilDesc">
+                <div class="desc-title">ACTIVE CONTROL FIN AEROFOIL</div>
+                <!-- EDITABLE: Aerofoil description below -->
+                <p>Four rectangular all-moving control fins at the aft section provide 3-axis manoeuvring authority. The NACA 0008 symmetric profile minimises drag at supersonic transitions while maintaining sufficient lift for rapid course corrections. Actuated by miniaturised electromechanical servos, they respond within 15ms — enabling the tight pursuit curves needed for a closing, evasive drone cluster.</p>
+              </div>
+            </div>
+
+            <!-- Phase 4: Optical Tracking -->
+            <div id="phase-tracking" class="phase-panel">
+              <canvas id="trackingCanvas" width="340" height="200"></canvas>
+              <div class="phase-description" id="trackingDesc">
+                <div class="desc-title">OPTICAL TRACKING & GUIDANCE</div>
+                <!-- EDITABLE: Tracking description below -->
+                <p>An onboard LWIR sensor feeds a lightweight convolutional neural network running at 120fps on an edge TPU. Each drone is detected and assigned a bounding box; the centroid of the cluster bounding box becomes the aim point. Proportional navigation guidance drives the control fins to null the line-of-sight rate, ensuring impact at the geometric centre of the swarm for maximum coverage.</p>
+              </div>
+            </div>
+
+            <!-- Phase 5: Payload Deploy -->
+            <div id="phase-payload" class="phase-panel">
+              <canvas id="payloadCanvas" width="340" height="200"></canvas>
+              <div class="phase-description" id="payloadDesc">
+                <div class="desc-title" id="payloadTitle">WARHEAD DEPLOYMENT</div>
+                <!-- EDITABLE: Payload description below — updated dynamically -->
+                <p id="payloadDescText">High-density tungsten fragmentation sleeve surrounds the warhead core. On fuze trigger, a precisely timed explosive ring shears the sleeve into hundreds of high-velocity fragments with a controlled dispersion cone matched to the swarm spread. Fragments achieve > 400 m/s lateral velocity, defeating drone airframes and rotor assemblies within a 15m radius sphere.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- BOTTOM RIGHT: Trajectory Panel -->
+        <div id="trajectory-panel">
+          <div class="panel-label">TRAJECTORY & TELEMETRY</div>
+          <canvas id="trajCanvas" width="340" height="160"></canvas>
+          <div class="traj-stats">
+            <div class="traj-stat"><span class="ts-label">TIME OF FLIGHT</span><span class="ts-val" id="tofVal">0.0s</span></div>
+            <div class="traj-stat"><span class="ts-label">DISTANCE</span><span class="ts-val" id="distVal">0m</span></div>
+            <div class="traj-stat"><span class="ts-label">SPEED</span><span class="ts-val" id="speedVal">0 m/s</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Three.js from CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="sim.js"></script>
+  <script src="panels.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>
