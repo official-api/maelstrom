@@ -3,7 +3,7 @@
    Photorealistic terrain, detailed rocket, improved guidance
    ═══════════════════════════════════════════ */
 
-const SIM = (() => {
+const SIM = (() => { 
   let renderer, scene, camera, clock;
   let ground, skyDome;
   let rocketGroup = null;
