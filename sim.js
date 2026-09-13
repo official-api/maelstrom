@@ -7,7 +7,7 @@ const SIM = (() => {
   let renderer, scene, camera, clock;
   let ground, skyDome;
   let rocketGroup = null;
-  let drones = [];
+  let drones = []; 
   let launchPod;
   let radarDish, radarScanRing;
   let explosionParticles = [];
