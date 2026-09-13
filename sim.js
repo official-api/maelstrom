@@ -1253,27 +1253,30 @@ const SIM = (() => {
     //   delta_i = pitchErr * cos(theta_i) + yawErr * sin(theta_i)
     // — exactly the projection of the commanded moment onto each fin's axis.
     if (rocketGroup._ctrlFins) {
-      // Error vector: desired direction minus current direction, in world space
-      const errWorld = newDir.clone().sub(currentDir);
+      // Decompose the guidance error directly from velocity vectors, NOT via
+      // rocketGroup.quaternion — the quaternion has already been slerped toward
+      // newDir this frame, so transforming through it collapses errLocal to ~zero.
+      //
+      // Instead, build the rocket's body axes from currentDir (pre-update heading)
+      // and project the turn demand (desiredDir - currentDir) onto the two
+      // perpendicular body axes: pitch (world-up component) and yaw (right component).
+      const bodyFwd = currentDir.clone(); // rocket nose direction before this frame's turn
+      const worldUp = (Math.abs(bodyFwd.y) > 0.99)
+        ? new THREE.Vector3(0, 0, 1)
+        : new THREE.Vector3(0, 1, 0);
+      const bodyRight = new THREE.Vector3().crossVectors(bodyFwd, worldUp).normalize();
+      const bodyUp    = new THREE.Vector3().crossVectors(bodyRight, bodyFwd).normalize();
 
-      // Express the error in rocket-local space so we get body-frame pitch/yaw
-      const invQuat = rocketGroup.quaternion.clone().invert();
-      const errLocal = errWorld.clone().applyQuaternion(invQuat);
+      // turnDemand: how much and which way the rocket needs to turn this frame
+      const turnDemand = desiredDir.clone().sub(currentDir);
 
-      // In rocket-local space the body axis is Y, so:
-      //   errLocal.x = yaw  error (left/right)
-      //   errLocal.z = pitch error (up/down)  (Z is "forward" in local after Y-up alignment)
-      const pitchCmd = THREE.MathUtils.clamp(-errLocal.z * 12, -1, 1);
-      const yawCmd   = THREE.MathUtils.clamp( errLocal.x * 12, -1, 1);
+      const pitchCmd = THREE.MathUtils.clamp(turnDemand.dot(bodyUp)    * 25, -1.0, 1.0);
+      const yawCmd   = THREE.MathUtils.clamp(turnDemand.dot(bodyRight) * 25, -1.0, 1.0);
 
       rocketGroup._ctrlFins.forEach((fg, i) => {
-        const theta = (i / 4) * Math.PI; // orbital angle of this fin group
+        const theta = (i / 4) * Math.PI * 2;
         const deflection = pitchCmd * Math.cos(theta) + yawCmd * Math.sin(theta);
-        // Rotate the cfGrp around its own local X (spanwise hinge at the body root).
-        // cfGrp.rotation.y = orbitalAngle was set at build and is not touched here.
-        // rotation.x is the only axis we drive — this deflects the fin tip in/out
-        // without spinning the rocket body at all.
-        fg.rotation.x = deflection*2;
+        fg.rotation.x = deflection;
       });
     }
 
