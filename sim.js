@@ -1252,33 +1252,24 @@ const SIM = (() => {
     // local space, the correct deflection for fin i is:
     //   delta_i = pitchErr * cos(theta_i) + yawErr * sin(theta_i)
     // — exactly the projection of the commanded moment onto each fin's axis.
-    if (rocketGroup._ctrlFins) {
-      // Decompose the guidance error directly from velocity vectors, NOT via
-      // rocketGroup.quaternion — the quaternion has already been slerped toward
-      // newDir this frame, so transforming through it collapses errLocal to ~zero.
-      //
-      // Instead, build the rocket's body axes from currentDir (pre-update heading)
-      // and project the turn demand (desiredDir - currentDir) onto the two
-      // perpendicular body axes: pitch (world-up component) and yaw (right component).
-      const bodyFwd = currentDir.clone(); // rocket nose direction before this frame's turn
-      const worldUp = (Math.abs(bodyFwd.y) > 0.99)
-        ? new THREE.Vector3(0, 0, 1)
-        : new THREE.Vector3(0, 1, 0);
-      const bodyRight = new THREE.Vector3().crossVectors(bodyFwd, worldUp).normalize();
-      const bodyUp    = new THREE.Vector3().crossVectors(bodyRight, bodyFwd).normalize();
-
-      // turnDemand: how much and which way the rocket needs to turn this frame
-      const turnDemand = desiredDir.clone().sub(currentDir);
-
-      const pitchCmd = THREE.MathUtils.clamp(turnDemand.dot(bodyUp)    * 25, -1.0, 1.0);
-      const yawCmd   = THREE.MathUtils.clamp(turnDemand.dot(bodyRight) * 25, -1.0, 1.0);
-
-      rocketGroup._ctrlFins.forEach((fg, i) => {
-        const theta = (i / 4) * Math.PI * 2;
-        const deflection = pitchCmd * Math.cos(theta) + yawCmd * Math.sin(theta);
-        fg.rotation.x = deflection;
-      });
-    }
+   if (rocketGroup._ctrlFins) {
+     const bodyFwd = currentDir.clone();
+     const worldUp = (Math.abs(bodyFwd.y) > 0.99) ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
+     const bodyRight = new THREE.Vector3().crossVectors(bodyFwd, worldUp).normalize();
+     const bodyUp    = new THREE.Vector3().crossVectors(bodyRight, bodyFwd).normalize();
+   
+     // Calculate angular error using cross product rather than vector subtraction
+     const rotAxis = new THREE.Vector3().crossVectors(currentDir, desiredDir);
+     const pitchCmd = THREE.MathUtils.clamp(rotAxis.dot(bodyRight) * 150, -0.6, 0.6);
+     const yawCmd   = THREE.MathUtils.clamp(-rotAxis.dot(bodyUp)   * 150, -0.6, 0.6);
+   
+     rocketGroup._ctrlFins.forEach((fg, i) => {
+       const theta = (i / 4) * Math.PI * 2;
+       // Add a slight high-frequency flutter so fins stay dynamic during tracking
+       const flutter = Math.sin(missionTime * 30 + i) * 0.05;
+       fg.rotation.x = pitchCmd * Math.cos(theta) + yawCmd * Math.sin(theta) + flutter;
+     });
+   }
 
     // Flame flicker
     if (engineFlame) {
