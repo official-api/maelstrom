@@ -641,14 +641,24 @@ const SIM = (() => {
     engineLight.visible = false;
     rocketGroup.add(engineLight);
 
-    rocketGroup.scale.setScalar(1.0); // Already in scene units *10
+        rocketGroup.scale.setScalar(1.0); // Already in scene units *10
     rocketPos.copy(launchOrigin);
     rocketGroup.position.copy(rocketPos);
+
+    // ── Pre-align toward the target instantly upon creation so it never flashes vertically
+    if (typeof droneSwarmCenter !== 'undefined' && launchOrigin) {
+      const toSwarm = droneSwarmCenter.clone().sub(launchOrigin).normalize();
+      const launchDir = new THREE.Vector3(toSwarm.x, 0.55, toSwarm.z).normalize();
+      const initialQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), launchDir);
+      rocketGroup.quaternion.copy(initialQuat);
+    }
+
     scene.add(rocketGroup);
     rocketGroup.visible = false;
 
     return ctrlFinGroups;
   }
+
 
     function makeFixedFin(mat) {
     const shape = new THREE.Shape();
