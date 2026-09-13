@@ -1108,8 +1108,23 @@ const SIM = (() => {
 
     trajectoryPoints.push(rocketPos.clone());
 
-    // Intercept check
-    if (dist < 3.5) triggerIntercept();
+    // Intercept check -- uses the distance AFTER this frame's movement was
+    // applied (not the pre-move `dist` computed above), otherwise the
+    // missile flies one extra frame past the trigger threshold before the
+    // hit registers, which reads as a visible overshoot. Also checks
+    // proximity to the nearest individual drone (they're spread several
+    // units out from the centroid), so the hit registers as soon as the
+    // missile reaches the edge of the formation rather than requiring it
+    // to fly all the way through to the exact geometric center.
+    const distAfterMove = droneSwarmCenter.distanceTo(rocketPos);
+    let nearestDroneDist = distAfterMove;
+    for (let i = 0; i < drones.length; i++) {
+      const d = drones[i];
+      if (d._alive === false) continue;
+      const dd = d.position.distanceTo(rocketPos);
+      if (dd < nearestDroneDist) nearestDroneDist = dd;
+    }
+    if (distAfterMove < 3.5 || nearestDroneDist < 2.5) triggerIntercept();
   }
 
   function triggerIntercept() {
