@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════
-   MAELSTROM — MAIN ORCHESTRATOR
+   MAELSTROM - MAIN ORCHESTRATOR
    Manages simulation state, UI transitions,
    HUD updates, and the panel draw loop.
    ═══════════════════════════════════════════ */
@@ -69,7 +69,7 @@
   function onRadarAlert() {
     simPhase = 'killSelect';
     el('alertBanner').classList.remove('hidden');
-    el('alertText').textContent = '⚠ DRONE SWARM DETECTED — RADAR CONTACT CONFIRMED — SELECT INTERCEPT MODE';
+    el('alertText').textContent = '⚠ DRONE SWARM DETECTED - RADAR CONTACT CONFIRMED - SELECT INTERCEPT MODE';
     setStatus('THREAT DETECTED', true);
     showPhase('killmode');
     setHud('hudSys', 'THREAT');
@@ -84,7 +84,7 @@
     el('alertBanner').classList.add('hidden');
     el('hudKillMode').textContent = mode.toUpperCase();
 
-    setStatus('MISSILE ARMED — LAUNCHING', true);
+    setStatus('MISSILE ARMED - LAUNCHING', true);
     showPhase('engine');
     activePanel = 'engine';
     panelPhaseTimer = 0;
@@ -106,9 +106,9 @@
     activePanel = 'payload';
     panelPhaseTimer = 0;
     showPhase('payload');
-    setStatus('INTERCEPT — WARHEAD DEPLOYED', true);
+    setStatus('INTERCEPT - WARHEAD DEPLOYED', true);
     el('alertBanner').classList.remove('hidden');
-    const modeText = mode === 'hard' ? 'HARD KILL — FRAGMENTATION DEPLOYED' : 'SOFT KILL — CARBON FIBRE DEPLOYED';
+    const modeText = mode === 'hard' ? 'HARD KILL - FRAGMENTATION DEPLOYED' : 'SOFT KILL - CARBON FIBRE DEPLOYED';
     el('alertText').textContent = `✓ ${modeText}`;
     el('alertBanner').style.borderColor = mode === 'hard' ? '#ff3c3c' : '#00aaff';
     el('alertBanner').style.color = mode === 'hard' ? '#ff3c3c' : '#00aaff';
@@ -235,13 +235,13 @@
     if (!title || !desc) return;
 
     if (mode === 'hard') {
-      title.textContent = 'HARD KILL — FRAGMENTATION WARHEAD';
+      title.textContent = 'HARD KILL - FRAGMENTATION WARHEAD';
       /* EDITABLE: Hard Kill Payload description */
       desc.textContent = 'High-density tungsten fragmentation sleeve surrounds the warhead core. On fuze trigger, a precisely timed explosive ring shears the sleeve into hundreds of high-velocity fragments with a controlled dispersion cone matched to the swarm spread. Fragments achieve > 400 m/s lateral velocity, defeating drone airframes and rotor assemblies within a 15m radius sphere.';
     } else {
-      title.textContent = 'SOFT KILL — CARBON FIBRE BURST';
+      title.textContent = 'SOFT KILL - CARBON FIBRE BURST';
       /* EDITABLE: Soft Kill Payload description */
-      desc.textContent = 'A compressed carbon-fibre filament package is ejected by a small pyrotechnic charge. The filament cloud expands to fill a 20m radius sphere in milliseconds — individual fibres entangle rotor blades and short-circuit exposed electronics. No energetic material is deposited on the ground, making this ideal for urban or complex terrain where collateral damage must be minimised.';
+      desc.textContent = 'A compressed carbon-fibre filament package is ejected by a small pyrotechnic charge. The filament cloud expands to fill a 20m radius sphere in milliseconds - individual fibres entangle rotor blades and short-circuit exposed electronics. No energetic material is deposited on the ground, making this ideal for urban or complex terrain where collateral damage must be minimised.';
     }
   }
 
