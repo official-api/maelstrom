@@ -29,6 +29,8 @@ const SIM = (() => {
   let rocketFired = false;
   let interceptDone = false;
   let rocketPaused = false;
+  let interceptArmed = false;   // set once all forced flight stages have been dismissed
+  const APPROACH_HOLD_DIST = 5.5; // must stay above the intercept trigger distance (3.5)
   let finRotDir = 1;
   let radarScanAngle = 0;
   let cameraTimer = 0;
@@ -1000,25 +1002,40 @@ const SIM = (() => {
     });
   }
 
+  function idleMotorEffects() {
+    // Motor keeps burning while the airframe is held still: flame flicker
+    // and exhaust trail continue exactly as in normal flight so a hold
+    // never looks like a freeze-frame.
+    if (engineFlame) {
+      const f1 = 0.82 + Math.random() * 0.36;
+      const f2 = 0.88 + Math.random() * 0.24;
+      engineFlame.scale.set(f1, f1 * (0.9 + Math.random() * 0.2), f1);
+      engineFlame2.scale.set(f2, f2 * (0.85 + Math.random() * 0.3), f2);
+      const flameOuter = rocketGroup.getObjectByName('flameOuter');
+      if (flameOuter) flameOuter.scale.setScalar(0.9 + Math.random() * 0.2);
+      engineLight.intensity = 8 + Math.random() * 4;
+    }
+    if (Math.random() < 0.9) spawnTrail();
+  }
+
   function updateRocket(dt) {
     if (!rocketFired || !rocketGroup) return;
     if (interceptDone) return;
 
     if (rocketPaused) {
-      // Flight is held between animation stages: the airframe stays put in
-      // space (no position/velocity/turn updates, no intercept check) but
-      // the motor keeps burning -- flame flicker and exhaust trail continue
-      // exactly as in normal flight so the hold doesn't look like a freeze-frame.
-      if (engineFlame) {
-        const f1 = 0.82 + Math.random() * 0.36;
-        const f2 = 0.88 + Math.random() * 0.24;
-        engineFlame.scale.set(f1, f1 * (0.9 + Math.random() * 0.2), f1);
-        engineFlame2.scale.set(f2, f2 * (0.85 + Math.random() * 0.3), f2);
-        const flameOuter = rocketGroup.getObjectByName('flameOuter');
-        if (flameOuter) flameOuter.scale.setScalar(0.9 + Math.random() * 0.2);
-        engineLight.intensity = 8 + Math.random() * 4;
-      }
-      if (Math.random() < 0.9) spawnTrail();
+      // Explicit hold between animation stages (user hasn't tapped "next stage" yet).
+      idleMotorEffects();
+      return;
+    }
+
+    // Standoff hold: don't let the missile actually reach the swarm until the
+    // final flight stage has been dismissed and intercept is armed. Without
+    // this, the missile's real flight time (a few seconds) can be shorter
+    // than the three staged animations, causing it to strike -- and end the
+    // sequence -- before the later stages ever get a chance to show.
+    const distToTarget = droneSwarmCenter.distanceTo(rocketPos);
+    if (!interceptArmed && distToTarget <= APPROACH_HOLD_DIST) {
+      idleMotorEffects();
       return;
     }
 
@@ -1237,6 +1254,7 @@ const SIM = (() => {
     
     rocketGroup.visible = true;
     rocketFired = false;
+    interceptArmed = false;
     rocketPos.copy(launchOrigin);
     rocketGroup.position.copy(rocketPos);
 
@@ -1270,6 +1288,8 @@ const SIM = (() => {
   function pauseRocket() { rocketPaused = true; }
   function resumeRocket() { rocketPaused = false; }
   function isRocketPaused() { return rocketPaused; }
+  function armIntercept() { interceptArmed = true; }
+  function isInterceptArmed() { return interceptArmed; }
 
   function resetSim() {
     drones.forEach(d => scene.remove(d));
@@ -1289,6 +1309,7 @@ const SIM = (() => {
     rocketFired = false;
     interceptDone = false;
     rocketPaused = false;
+    interceptArmed = false;
     trajectoryPoints = [];
     rocketPos.set(0, 0, 0);
     rocketVel.set(0, 0, 0);
@@ -1308,7 +1329,7 @@ const SIM = (() => {
     init, startApproach, launchRocket, resetSim,
     getTrajectoryPoints, getRocketPos, getSwarmCenter,
     getSimState, getMissionTime,
-    pauseRocket, resumeRocket, isRocketPaused,
+    pauseRocket, resumeRocket, isRocketPaused, armIntercept, isInterceptArmed,
     onAlert, onRocketLaunch, onIntercept, onDone
   };
 })();
