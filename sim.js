@@ -1048,25 +1048,30 @@ const SIM = (() => {
     if (!rocketFired || !rocketGroup) return;
     if (interceptDone) return;
 
-    // Pure pursuit with strong gain - guaranteed hit
+    // Direct pursuit with clamped turn rate -- guaranteed convergence
     const toTarget = droneSwarmCenter.clone().sub(rocketPos);
     const dist = toTarget.length();
-    const toTargetNorm = toTarget.clone().normalize();
+    const desiredDir = toTarget.clone().normalize();
     const currentDir = rocketVel.clone().normalize();
 
-    // Proportional navigation: steer rate proportional to LOS rate
-    const steerGain = dist > 8 ? 0.18 : 0.35; // tighten as we close
-    const steer = toTargetNorm.clone().sub(currentDir).multiplyScalar(steerGain);
-    rocketVel.add(steer);
-
-    // Speed - accelerate to max
-    const maxSpeed = 28;
-    const spd = rocketVel.length();
-    if (spd < maxSpeed) {
-      rocketVel.normalize().multiplyScalar(Math.min(spd + 10 * dt, maxSpeed));
+    // Rotate current heading toward desired by max turn rate (rad/s)
+    const maxTurnRate = dist > 20 ? 4.0 : 8.0;
+    const maxTurn = maxTurnRate * dt;
+    const dot = Math.min(1, Math.max(-1, currentDir.dot(desiredDir)));
+    const angle = Math.acos(dot);
+    let newDir;
+    if (angle < 0.0001) {
+      newDir = desiredDir.clone();
     } else {
-      rocketVel.normalize().multiplyScalar(maxSpeed);
+      const t = Math.min(1, maxTurn / angle);
+      newDir = currentDir.clone().lerp(desiredDir, t).normalize();
     }
+
+    // Accelerate along new direction
+    const maxSpeed = 30;
+    const spd = Math.min(rocketVel.length() + 12 * dt, maxSpeed);
+    rocketVel.copy(newDir).multiplyScalar(spd);
+
 
     rocketPos.add(rocketVel.clone().multiplyScalar(dt));
     rocketGroup.position.copy(rocketPos);
