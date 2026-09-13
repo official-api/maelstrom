@@ -3,12 +3,11 @@
    Photorealistic terrain, detailed rocket, improved guidance
    ═══════════════════════════════════════════ */
 
-const SIM = (() => { 
+const SIM = (() => {
   let renderer, scene, camera, clock;
   let ground, skyDome;
   let rocketGroup = null;
   let drones = [];
-  let trees = [];
   let launchPod;
   let radarDish, radarScanRing;
   let explosionParticles = [];
@@ -27,6 +26,15 @@ const SIM = (() => {
   let launchDir = new THREE.Vector3(0, 1, 0); // world-space direction the launch tube (and loaded rocket) points
   let droneActiveTime = 0; // accumulates only while drones aren't paused, so dive phase never jumps on resume
   const MIN_DRONE_ALTITUDE = 60; // floor so dive manoeuvres never drop the swarm into the mountain silhouette
+  // Whole-swarm synchronized dive: every drone shares this single damped
+  // oscillation rather than each following its own pattern. The wave starts
+  // big and decays asymptotically toward level flight, then a fresh dive
+  // re-triggers, like a real formation making a repeated evasive swoop.
+  const SWARM_DIVE_PERIOD = 6.5;      // seconds per oscillation within a dive
+  const SWARM_DIVE_DECAY = 0.32;      // how fast the oscillation settles out
+  const SWARM_DIVE_RETRIGGER = 16.0;  // seconds between fresh dives
+  const SWARM_DIVE_AMPLITUDE = 17;    // initial vertical swoop range (units)
+  const SWARM_LATERAL_AMPLITUDE = 6;  // initial side-to-side swoop range (units)
   let controlFinAngle = 0;
   let engineFlame, engineFlame2, engineLight;
   let rocketFired = false;
@@ -120,7 +128,6 @@ const SIM = (() => {
     buildSky();
     buildGround();
     buildMountains();
-    buildTrees();
     buildDroneSwarm();   // must exist first so the launch pod can be oriented to face it
     buildLaunchPod();
     buildRocket();       // rocket is loaded in the tube and visible from the very start
@@ -371,105 +378,6 @@ const SIM = (() => {
     const mountains = new THREE.Mesh(geo, mat);
     mountains.position.y = height / 2 - 3;
     scene.add(mountains);
-  }
-
-  /* ════════════════════════════════════
-     TREES - detailed
-  ════════════════════════════════════ */
-  function buildTrees() {
-    const positions = [
-      [-28, -15], [-33, 4], [-22, 22], [-18, -28],
-      [25, -20], [30, -4], [20, 14], [38, 18],
-      [12, -30], [-8, -35], [45, -5], [-40, 10],
-      [22, -35], [-15, 32],
-    ];
-    positions.forEach(([x, z]) => {
-      const h = fbm(x * 0.04, z * 0.04, 5) * 3.0 - fbm(x * 0.1 + 5, z * 0.1 + 5, 3) * 0.6;
-      const t = buildDetailedTree(x, h, z);
-      trees.push(t);
-      scene.add(t);
-    });
-  }
-
-  function buildDetailedTree(x, yBase, z) {
-    const group = new THREE.Group();
-    group.position.set(x, yBase, z);
-
-    const treeH = 6 + Math.random() * 5;
-    const treeType = Math.random() > 0.5 ? 'pine' : 'deciduous';
-
-    // Trunk - tapered cylinder with bark detail
-    const trunkSegs = 10;
-    const trunkGeo = new THREE.CylinderGeometry(
-      0.12 + Math.random() * 0.06,
-      0.25 + Math.random() * 0.1,
-      treeH * 0.45, trunkSegs
-    );
-    // Warp trunk vertices for natural feel
-    const tp = trunkGeo.attributes.position;
-    for (let i = 0; i < tp.count; i++) {
-      tp.setX(i, tp.getX(i) + (Math.random() - 0.5) * 0.04);
-      tp.setZ(i, tp.getZ(i) + (Math.random() - 0.5) * 0.04);
-    }
-    trunkGeo.computeVertexNormals();
-
-    const barkH = new THREE.Color().setHSL(0.07, 0.4, 0.13 + Math.random() * 0.05);
-    const trunkMat = new THREE.MeshStandardMaterial({ color: barkH, roughness: 0.95, metalness: 0 });
-    const trunk = new THREE.Mesh(trunkGeo, trunkMat);
-    trunk.position.y = treeH * 0.225;
-    trunk.castShadow = true;
-    trunk.receiveShadow = true;
-    group.add(trunk);
-
-    // Root flares
-    for (let i = 0; i < 4; i++) {
-      const a = (i / 4) * Math.PI * 2;
-      const flareGeo = new THREE.CylinderGeometry(0.04, 0.18, treeH * 0.12, 5);
-      const flare = new THREE.Mesh(flareGeo, trunkMat);
-      flare.position.set(Math.cos(a) * 0.15, treeH * 0.06, Math.sin(a) * 0.15);
-      flare.rotation.z = Math.cos(a) * 0.4;
-      flare.rotation.x = Math.sin(a) * 0.4;
-      flare.castShadow = true;
-      group.add(flare);
-    }
-
-    if (treeType === 'pine') {
-      // Pine: layered cones
-      const layers = 5;
-      for (let i = 0; i < layers; i++) {
-        const t = i / (layers - 1);
-        const r = (1.5 - t * 0.8) * (1.8 + Math.random() * 0.4);
-        const ly = treeH * 0.38 + i * treeH * 0.12;
-        const coneH = treeH * 0.22;
-        const leafH = new THREE.Color().setHSL(0.28 + Math.random() * 0.06, 0.55, 0.16 + Math.random() * 0.08);
-        const leafMat = new THREE.MeshStandardMaterial({ color: leafH, roughness: 0.9, metalness: 0, side: THREE.FrontSide });
-        const cone = new THREE.Mesh(new THREE.ConeGeometry(r * 0.55, coneH, 10 + i, 1), leafMat);
-        cone.position.y = ly;
-        cone.rotation.y = Math.random() * Math.PI;
-        cone.castShadow = true;
-        cone.receiveShadow = true;
-        group.add(cone);
-      }
-    } else {
-      // Deciduous: cluster of icospheres
-      const leafH = new THREE.Color().setHSL(0.27 + Math.random() * 0.06, 0.58, 0.18 + Math.random() * 0.10);
-      const leafMat = new THREE.MeshStandardMaterial({ color: leafH, roughness: 0.88, metalness: 0 });
-      const clusterCount = 5 + Math.floor(Math.random() * 4);
-      for (let i = 0; i < clusterCount; i++) {
-        const r = 1.8 + Math.random() * 1.2;
-        const cx2 = (Math.random() - 0.5) * r;
-        const cy2 = treeH * 0.5 + Math.random() * treeH * 0.3;
-        const cz2 = (Math.random() - 0.5) * r;
-        const blob = new THREE.Mesh(new THREE.IcosahedronGeometry(r * 0.5 + Math.random() * 0.4, 1), leafMat);
-        blob.position.set(cx2, cy2, cz2);
-        blob.rotation.set(Math.random(), Math.random(), Math.random());
-        blob.castShadow = true;
-        blob.receiveShadow = true;
-        group.add(blob);
-      }
-    }
-
-    return group;
   }
 
   /* ════════════════════════════════════
@@ -931,20 +839,14 @@ const SIM = (() => {
       const drone = buildDetailedDrone();
       drone.position.set(swarmCenter.x + dx, swarmCenter.y + dy, swarmCenter.z + dz);
       drone._basePos = drone.position.clone();
-      // Slow centre-of-formation drift (unrelated to the dive manoeuvre below).
+      // Slow centre-of-formation drift (unrelated to the whole-swarm dive,
+      // which is applied identically to every drone in updateDrones).
       drone._dynamicBase = drone.position.clone();
       drone._vel = new THREE.Vector3(
         (Math.random() - 0.5) * 0.02,
         (Math.random() - 0.5) * 0.01,
         (Math.random() - 0.5) * 0.02
       );
-      // Per-drone diving-manoeuvre parameters: each drone swoops up and down
-      // and side to side on its own cycle so the swarm reads as alive and
-      // evasive rather than gliding in a flat straight line.
-      drone._diveSeed = Math.random() * 1000;
-      drone._divePeriod = 5 + Math.random() * 4;      // seconds per dive cycle
-      drone._diveAmp = 6 + Math.random() * 9;          // vertical swoop range (units)
-      drone._lateralAmp = 2 + Math.random() * 4;       // side-to-side swoop range (units)
       drone._alive = true;
       drone._fallVel = 0;
       scene.add(drone);
@@ -1206,6 +1108,25 @@ const SIM = (() => {
     const paused = rocketPaused && simState === 'flight';
     if (!paused) droneActiveTime += dt;
 
+    // One shared dive pattern for the entire swarm: a damped oscillation
+    // that starts with a big swoop and decays asymptotically toward level
+    // flight, then re-triggers into a fresh dive -- every drone reads the
+    // exact same wave, so the formation moves as a single unit rather than
+    // each drone doing its own thing.
+    const cyclePos = droneActiveTime % SWARM_DIVE_RETRIGGER;
+    const angFreq = Math.PI * 2 / SWARM_DIVE_PERIOD;
+    const envelope = Math.exp(-SWARM_DIVE_DECAY * cyclePos); // -> 0 asymptotically within each cycle
+    const diveOffset = Math.sin(angFreq * cyclePos) * envelope * SWARM_DIVE_AMPLITUDE;
+    const lateralPhase = angFreq * 0.5 * cyclePos + 0.6;
+    const lateralOffsetX = Math.sin(lateralPhase) * envelope * SWARM_LATERAL_AMPLITUDE;
+    const lateralOffsetZ = Math.cos(lateralPhase * 0.8) * envelope * SWARM_LATERAL_AMPLITUDE;
+    // Roughly the wave's instantaneous vertical rate, used to bank the whole
+    // formation into the dive (envelope's own decay is slow enough vs. the
+    // oscillation to ignore its derivative here without it looking wrong).
+    const vertRate = Math.cos(angFreq * cyclePos) * angFreq * envelope;
+    const bankZ = THREE.MathUtils.clamp(-vertRate * SWARM_DIVE_AMPLITUDE * 0.05, -0.6, 0.6);
+    const bankX = THREE.MathUtils.clamp(vertRate * SWARM_DIVE_AMPLITUDE * 0.035, -0.4, 0.4);
+
     drones.forEach((drone, i) => {
       if (!drone._alive) {
         drone._fallVel += dt * 9.8 * 0.8;
@@ -1232,26 +1153,18 @@ const SIM = (() => {
       // Slow drift of the manoeuvre's "centre" (formation advance / approach).
       drone._dynamicBase.addScaledVector(drone._vel, 1);
 
-      // Realistic diving manoeuvre: a layered sine wave (fundamental + a
-      // faster harmonic) gives an organic swoop-dive-recover pattern rather
-      // than a flat sinusoid, banked into the vertical motion like a real
-      // aircraft/drone would roll and pitch through a dive.
-      const phase = (droneActiveTime + drone._diveSeed) / drone._divePeriod * Math.PI * 2;
-      const diveWave = Math.sin(phase) * 0.65 + Math.sin(phase * 2.2 + 1.3) * 0.35;
-      const desiredY = drone._dynamicBase.y + diveWave * drone._diveAmp;
+      // Apply the one shared swarm-wide dive wave on top of this drone's own
+      // formation slot, so the whole swarm swoops together as a single body.
+      const desiredY = drone._dynamicBase.y + diveOffset;
       // Floor keeps the swarm from ever diving low enough to disappear
       // against the mountain silhouette behind it.
       drone.position.y = Math.max(desiredY, MIN_DRONE_ALTITUDE);
+      drone.position.x = drone._dynamicBase.x + lateralOffsetX;
+      drone.position.z = drone._dynamicBase.z + lateralOffsetZ;
 
-      const lateralPhase = phase * 0.6 + drone._diveSeed * 1.7;
-      drone.position.x = drone._dynamicBase.x + Math.sin(lateralPhase) * drone._lateralAmp;
-      drone.position.z = drone._dynamicBase.z + Math.cos(lateralPhase * 0.8) * drone._lateralAmp;
-
-      // Bank/pitch into the dive based on instantaneous vertical rate.
-      const angFreq = Math.PI * 2 / drone._divePeriod;
-      const vertRate = Math.cos(phase) * 0.65 * angFreq + Math.cos(phase * 2.2 + 1.3) * 0.35 * angFreq * 2.2;
-      drone.rotation.z = THREE.MathUtils.clamp(-vertRate * drone._diveAmp * 0.06, -0.55, 0.55);
-      drone.rotation.x = THREE.MathUtils.clamp(vertRate * drone._diveAmp * 0.04, -0.35, 0.35);
+      // Whole formation banks/pitches into the dive together.
+      drone.rotation.z = bankZ;
+      drone.rotation.x = bankX;
       drone.rotation.y += dt * 0.5;
     });
 
