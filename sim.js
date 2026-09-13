@@ -1205,10 +1205,19 @@ const SIM = (() => {
     }, 3200);
   }
 
-  function launchRocket(mode) {
+    function launchRocket(mode) {
     killMode = mode;
     simState = 'launch';
     buildRocket();
+    
+    // Calculate the launch direction instantly so it isn't pointing straight up
+    const toSwarm = droneSwarmCenter.clone().sub(launchOrigin).normalize();
+    const launchDir = new THREE.Vector3(toSwarm.x, 0.55, toSwarm.z).normalize();
+    
+    // Apply the orientation immediately before making it visible
+    const initialQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), launchDir);
+    rocketGroup.quaternion.copy(initialQuat);
+    
     rocketGroup.visible = true;
     rocketFired = false;
     rocketPos.copy(launchOrigin);
@@ -1222,9 +1231,8 @@ const SIM = (() => {
       if (flameOuter) flameOuter.visible = true;
       if (engineLight) { engineLight.visible = true; }
 
-      const toSwarm = droneSwarmCenter.clone().sub(launchOrigin).normalize();
-      const launchDir = new THREE.Vector3(toSwarm.x, 0.55, toSwarm.z).normalize();
-      rocketVel.copy(launchDir.multiplyScalar(6));
+      // Use the pre-calculated launch direction vector to kick off velocity
+      rocketVel.copy(launchDir).multiplyScalar(6);
       rocketFired = true;
       simState = 'flight';
       cameraMode = 'flight';
