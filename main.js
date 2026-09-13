@@ -39,6 +39,28 @@
     SIM.init('simCanvas');
     PANELS.init();
 
+    // Loading screen: stays up until every external sky/ground/mountain
+    // texture asset SIM kicked off has finished (successfully or not).
+    const loadingOverlay = el('loadingOverlay');
+    const loadingBarFill = el('loadingBarFill');
+    const loadingSubText = el('loadingSubText');
+
+    SIM.onLoadProgress((loaded, total) => {
+      if (!loadingBarFill) return;
+      const pct = total > 0 ? Math.round((loaded / total) * 100) : 0;
+      loadingBarFill.style.width = pct + '%';
+      if (loadingSubText) loadingSubText.textContent = `LOADING TERRAIN & SKY ASSETS… ${pct}%`;
+    });
+
+    SIM.onAssetsReady(() => {
+      if (!loadingOverlay) return;
+      if (loadingBarFill) loadingBarFill.style.width = '100%';
+      loadingOverlay.classList.add('fade-out');
+      // Fully remove from layout/interaction after the fade transition ends,
+      // so it can never block clicks on the canvas underneath.
+      setTimeout(() => loadingOverlay.classList.add('hidden'), 550);
+    });
+
     // Wire buttons
     el('beginAttackBtn').addEventListener('click', onBeginAttack);
     el('hardKillBtn').addEventListener('click', () => onKillSelect('hard'));
