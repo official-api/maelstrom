@@ -30,7 +30,7 @@ const SIM = (() => {
   // START_ALT / (1 + k*t), giving the characteristic steep-then-flattening
   // curve from the reference image.
   const DRONE_START_ALT  = 78;   // initial swarm altitude (matches spawn Y)
-  const DRONE_DIVE_K     = 0.018; // controls how sharply altitude falls off
+  const DRONE_DIVE_K     = 0.18; // controls how sharply altitude falls off
   const DRONE_DIVE_FLOOR = 8;    // minimum altitude the swarm reaches
   let controlFinAngle = 0;
   let engineFlame, engineFlame2, engineLight;
