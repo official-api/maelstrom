@@ -39,8 +39,8 @@
     SIM.init('simCanvas');
     PANELS.init();
 
-    // Loading screen: stays up until every external sky/ground/mountain
-    // texture asset SIM kicked off has finished (successfully or not).
+    // Loading screen: stays up until every external sky/ground texture
+    // asset SIM kicked off has finished (successfully or not).
     const loadingOverlay = el('loadingOverlay');
     const loadingBarFill = el('loadingBarFill');
     const loadingSubText = el('loadingSubText');
