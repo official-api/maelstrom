@@ -14,6 +14,18 @@
   let missionStartTime = null;
   let trajectoryPoints = [];
 
+  /* ─── In-flight panel stages ───
+     Each entry plays for `duration` seconds, then the rocket is paused
+     (flame/exhaust keep animating) and the mission holds for a "NEXT STAGE"
+     tap before moving on to the following animation. */
+  const FLIGHT_STAGES = [
+    { panel: 'engine',   duration: 3.5 },
+    { panel: 'aerofoil', duration: 3.5 },
+    { panel: 'tracking', duration: 3.5 }
+  ];
+  let stageIndex = 0;
+  let flightPaused = false;
+
   /* ─── DOM Refs ─── */
   const el = id => document.getElementById(id);
 
@@ -37,6 +49,7 @@
     el('softKillBtn').addEventListener('click', () => onKillSelect('soft'));
     el('replayBtn').addEventListener('click', onReplay);
     el('replayBtn2').addEventListener('click', onReplay);
+    el('nextStageBtn').addEventListener('click', onNextStage);
 
     // SIM callbacks
     SIM.onAlert(onRadarAlert);
@@ -88,6 +101,9 @@
     showPhase('engine');
     activePanel = 'engine';
     panelPhaseTimer = 0;
+    stageIndex = 0;
+    flightPaused = false;
+    el('nextStageOverlay').classList.add('hidden');
 
     // Update payload panel for selected mode
     PANELS.setPayloadMode(mode);
@@ -105,6 +121,8 @@
     simPhase = 'intercept';
     activePanel = 'payload';
     panelPhaseTimer = 0;
+    flightPaused = false;
+    el('nextStageOverlay').classList.add('hidden');
     showPhase('payload');
     setStatus('INTERCEPT - WARHEAD DEPLOYED', true);
     el('alertBanner').classList.remove('hidden');
@@ -130,12 +148,15 @@
     panelPhaseTimer = 0;
     trajectoryPoints = [];
     missionStartTime = null;
+    stageIndex = 0;
+    flightPaused = false;
 
     el('alertBanner').classList.add('hidden');
     el('alertBanner').style.borderColor = '';
     el('alertBanner').style.color = '';
     el('costOverlay').classList.add('hidden');
     el('replayBtn').classList.add('hidden');
+    el('nextStageOverlay').classList.add('hidden');
     el('hudKillMode').textContent = 'NONE';
     el('hudSys').textContent = 'STANDBY';
     el('hudTargets').textContent = '0';
@@ -150,6 +171,24 @@
     setStatus('SYSTEM NOMINAL', false);
     showPhase('standby');
     SIM.resetSim();
+  }
+
+  /* ─── Flight stage gating ─── */
+  function pauseFlight() {
+    flightPaused = true;
+    SIM.pauseRocket();
+    setStatus('HOLDING - AWAITING NEXT STAGE', false);
+    el('nextStageOverlay').classList.remove('hidden');
+  }
+
+  function onNextStage() {
+    if (!flightPaused) return;
+    flightPaused = false;
+    panelPhaseTimer = 0;
+    stageIndex = Math.min(stageIndex + 1, FLIGHT_STAGES.length);
+    el('nextStageOverlay').classList.add('hidden');
+    SIM.resumeRocket();
+    setStatus('MISSILE IN FLIGHT', false);
   }
 
   /* ─── Main loop ─── */
@@ -173,16 +212,16 @@
       el('missionTimer').textContent = `T+${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
     }
 
-    panelPhaseTimer += dt;
+    // Advance panel phases during flight, pausing the rocket in place
+    // (motor still burning) between each stage until the user taps "next stage"
+    if ((simPhase === 'flight' || simPhase === 'launch') && !flightPaused) {
+      panelPhaseTimer += dt;
 
-    // Advance panel phases during flight
-    if (simPhase === 'flight' || simPhase === 'launch') {
-      if (panelPhaseTimer < 3.5) {
-        if (activePanel !== 'engine') { activePanel = 'engine'; showPhase('engine'); }
-      } else if (panelPhaseTimer < 7.0) {
-        if (activePanel !== 'aerofoil') { activePanel = 'aerofoil'; showPhase('aerofoil'); }
-      } else {
-        if (activePanel !== 'tracking') { activePanel = 'tracking'; showPhase('tracking'); }
+      const stage = FLIGHT_STAGES[Math.min(stageIndex, FLIGHT_STAGES.length - 1)];
+      if (activePanel !== stage.panel) { activePanel = stage.panel; showPhase(stage.panel); }
+
+      if (stageIndex < FLIGHT_STAGES.length && panelPhaseTimer >= stage.duration) {
+        pauseFlight();
       }
     }
 
