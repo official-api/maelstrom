@@ -1263,11 +1263,11 @@ const SIM = (() => {
       // In rocket-local space the body axis is Y, so:
       //   errLocal.x = yaw  error (left/right)
       //   errLocal.z = pitch error (up/down)  (Z is "forward" in local after Y-up alignment)
-      const pitchCmd = THREE.MathUtils.clamp(-errLocal.z * 6, -0.5, 0.5);
-      const yawCmd   = THREE.MathUtils.clamp( errLocal.x * 6, -0.5, 0.5);
+      const pitchCmd = THREE.MathUtils.clamp(-errLocal.z * 12, -1, 1);
+      const yawCmd   = THREE.MathUtils.clamp( errLocal.x * 12, -1, 1);
 
       rocketGroup._ctrlFins.forEach((fg, i) => {
-        const theta = (i / 4) * Math.PI * 2; // orbital angle of this fin group
+        const theta = (i / 4) * Math.PI; // orbital angle of this fin group
         const deflection = pitchCmd * Math.cos(theta) + yawCmd * Math.sin(theta);
         // Rotate the cfGrp around its own local X (spanwise hinge at the body root).
         // cfGrp.rotation.y = orbitalAngle was set at build and is not touched here.
