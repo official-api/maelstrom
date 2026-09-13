@@ -1215,18 +1215,11 @@ const SIM = (() => {
     }, 3200);
   }
 
-    function launchRocket(mode) {
+      function launchRocket(mode) {
     killMode = mode;
     simState = 'launch';
-    buildRocket();
     
-    // Calculate the launch direction instantly so it isn't pointing straight up
-    const toSwarm = droneSwarmCenter.clone().sub(launchOrigin).normalize();
-    const launchDir = new THREE.Vector3(toSwarm.x, 0.55, toSwarm.z).normalize();
-    
-    // Apply the orientation immediately before making it visible
-    const initialQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), launchDir);
-    rocketGroup.quaternion.copy(initialQuat);
+    buildRocket(); // This now automatically sets the tilted orientation inside it
     
     rocketGroup.visible = true;
     rocketFired = false;
@@ -1241,7 +1234,10 @@ const SIM = (() => {
       if (flameOuter) flameOuter.visible = true;
       if (engineLight) { engineLight.visible = true; }
 
-      // Use the pre-calculated launch direction vector to kick off velocity
+      // Get the correct heading vector to compute immediate physics velocity
+      const toSwarm = droneSwarmCenter.clone().sub(launchOrigin).normalize();
+      const launchDir = new THREE.Vector3(toSwarm.x, 0.55, toSwarm.z).normalize();
+      
       rocketVel.copy(launchDir).multiplyScalar(6);
       rocketFired = true;
       simState = 'flight';
@@ -1249,6 +1245,7 @@ const SIM = (() => {
       if (onRocketLaunchCb) onRocketLaunchCb();
     }, 700);
   }
+
 
   function getTrajectoryPoints() { return trajectoryPoints; }
   function getRocketPos() { return rocketPos; }
