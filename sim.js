@@ -24,14 +24,14 @@ const SIM = (() => {
   let trajectoryPoints = [];
   let launchOrigin = new THREE.Vector3();
   let launchDir = new THREE.Vector3(0, 1, 0); // world-space direction the launch tube (and loaded rocket) points
-  let droneActiveTime = 0; // accumulates only while drones aren't paused
   // Swarm manoeuvre: forward -> strafe right -> forward again, flat altitude.
   //   Phase 0 FORWARD : fly in _swarmFwd direction
   //   Phase 1 STRAFE  : slide sideways in _swarmRight direction
   //   Phase 2 FORWARD : resume _swarmFwd direction
+  // Phases are keyed to rocket distance fractions (same system as STAGE_FRACTIONS).
   let dronePhase = 0;
-  const DRONE_FORWARD_DURATION = 4.0;  // seconds of forward flight before strafing right
-  const DRONE_BANK_DURATION    = 2.5;  // seconds spent strafing right
+  const DRONE_STRAFE_START = 0.35; // fraction of totalFlightDistance where strafe begins
+  const DRONE_STRAFE_END   = 0.60; // fraction where strafe ends and forward resumes
   // Initial forward direction (swarm starts at 150,78,-130 heading toward pod at -8,y,8)
   const _swarmFwd   = new THREE.Vector3(-158, 0, 138).normalize();
   // Right-hand perpendicular of _swarmFwd in XZ plane (rotate +90 deg around Y)
@@ -1081,21 +1081,21 @@ const SIM = (() => {
   function updateDrones(dt) {
     // Freeze the whole engagement while the missile is between staged pauses.
     const paused = rocketPaused && simState === 'flight';
-    if (!paused && rocketFired) droneActiveTime += dt;
 
-    // Swarm manoeuvre: forward -> strafe right -> forward again, flat altitude throughout.
-    // Phase 0 FORWARD : fly straight in _swarmFwd direction
-    // Phase 1 STRAFE  : slide sharply to the right (_swarmRight), no heading change
-    // Phase 2 FORWARD : resume flying in the original _swarmFwd direction
-    if (!paused) {
-      if (dronePhase === 0 && droneActiveTime >= DRONE_FORWARD_DURATION) {
+    // Phase transitions are driven by rocket distance fraction (same system as
+    // STAGE_FRACTIONS / panel animations), so the swarm manoeuvre is always
+    // spatially coupled to the missile's progress, not wall-clock time.
+    // Drones don't move at all until the rocket has been fired.
+    if (rocketFired && totalFlightDistance > 0) {
+      const frac = distanceTraveled / totalFlightDistance;
+      if (dronePhase === 0 && frac >= DRONE_STRAFE_START) {
         dronePhase = 1;
-      } else if (dronePhase === 1 && droneActiveTime >= DRONE_FORWARD_DURATION + DRONE_BANK_DURATION) {
+      } else if (dronePhase === 1 && frac >= DRONE_STRAFE_END) {
         dronePhase = 2;
       }
     }
 
-    const ADVANCE_SPEED = 1.5; // units per second, consistent across all phases
+    const ADVANCE_SPEED = 1; // units per second
 
     drones.forEach((drone, i) => {
       if (!drone._alive) {
@@ -1108,7 +1108,8 @@ const SIM = (() => {
         return;
       }
 
-      if (paused) return;
+      // Hold position until rocket is fired, and during staged pauses
+      if (!rocketFired || paused) return;
 
       const step = ADVANCE_SPEED * dt;
 
@@ -1472,7 +1473,6 @@ const SIM = (() => {
     controlFinAngle = 0;
     cameraMode = 'orbit';
     cameraTimer = 0;
-    droneActiveTime = 0;
     dronePhase = 0;
 
     buildDroneSwarm();
