@@ -29,8 +29,16 @@ const SIM = (() => {
   let rocketFired = false;
   let interceptDone = false;
   let rocketPaused = false;
-  let interceptArmed = false;   // set once all forced flight stages have been dismissed
-  const APPROACH_HOLD_DIST = 5.5; // must stay above the intercept trigger distance (3.5)
+
+  // Flight is divided into checkpoints by distance actually travelled (not
+  // wall-clock time), so the three staged animations are evenly spaced out
+  // along the flight path regardless of how fast the missile is moving.
+  // 0.25 / 0.5 / 0.75 of the total launch-to-target distance.
+  const STAGE_FRACTIONS = [0.25, 0.5, 0.75];
+  let totalFlightDistance = 0;
+  let distanceTraveled = 0;
+  let nextCheckpointIdx = 0;
+  let onStageCb = null;
   let finRotDir = 1;
   let radarScanAngle = 0;
   let cameraTimer = 0;
@@ -78,7 +86,7 @@ const SIM = (() => {
     renderer.physicallyCorrectLights = true;
 
     scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x8ca0a0, 0.007);
+    scene.fog = new THREE.FogExp2(0x8ca0a0, 0.0028);
 
     clock = new THREE.Clock();
 
@@ -695,8 +703,10 @@ const SIM = (() => {
      DRONE SWARM - placed far away
   ════════════════════════════════════ */
   function buildDroneSwarm() {
-    // Place swarm FAR - 90 units away so rocket has ample flight time
-    const swarmCenter = new THREE.Vector3(55, 10, -45);
+    // Placed a long way out (~210 units) so the missile's flight has plenty
+    // of runway for the engine / aerofoil / tracking stages to each get
+    // real screen time before final approach.
+    const swarmCenter = new THREE.Vector3(150, 14, -130);
     droneSwarmCenter.copy(swarmCenter);
 
     const offsets = [
@@ -1028,17 +1038,6 @@ const SIM = (() => {
       return;
     }
 
-    // Standoff hold: don't let the missile actually reach the swarm until the
-    // final flight stage has been dismissed and intercept is armed. Without
-    // this, the missile's real flight time (a few seconds) can be shorter
-    // than the three staged animations, causing it to strike -- and end the
-    // sequence -- before the later stages ever get a chance to show.
-    const distToTarget = droneSwarmCenter.distanceTo(rocketPos);
-    if (!interceptArmed && distToTarget <= APPROACH_HOLD_DIST) {
-      idleMotorEffects();
-      return;
-    }
-
     // Direct pursuit with clamped turn rate -- guaranteed convergence
     const toTarget = droneSwarmCenter.clone().sub(rocketPos);
     const dist = toTarget.length();
@@ -1066,6 +1065,17 @@ const SIM = (() => {
 
     rocketPos.add(rocketVel.clone().multiplyScalar(dt));
     rocketGroup.position.copy(rocketPos);
+
+    // Track distance actually flown and fire staged checkpoints at even
+    // fractions of the total launch-to-target distance.
+    distanceTraveled += spd * dt;
+    if (nextCheckpointIdx < STAGE_FRACTIONS.length &&
+        distanceTraveled >= totalFlightDistance * STAGE_FRACTIONS[nextCheckpointIdx]) {
+      const reachedIdx = nextCheckpointIdx;
+      nextCheckpointIdx++;
+      rocketPaused = true;
+      if (onStageCb) onStageCb(reachedIdx);
+    }
 
     // Orient rocket along velocity
     const dir = rocketVel.clone().normalize();
@@ -1254,7 +1264,10 @@ const SIM = (() => {
     
     rocketGroup.visible = true;
     rocketFired = false;
-    interceptArmed = false;
+    rocketPaused = false;
+    totalFlightDistance = launchOrigin.distanceTo(droneSwarmCenter);
+    distanceTraveled = 0;
+    nextCheckpointIdx = 0;
     rocketPos.copy(launchOrigin);
     rocketGroup.position.copy(rocketPos);
 
@@ -1288,8 +1301,7 @@ const SIM = (() => {
   function pauseRocket() { rocketPaused = true; }
   function resumeRocket() { rocketPaused = false; }
   function isRocketPaused() { return rocketPaused; }
-  function armIntercept() { interceptArmed = true; }
-  function isInterceptArmed() { return interceptArmed; }
+  function onStageReached(cb) { onStageCb = cb; }
 
   function resetSim() {
     drones.forEach(d => scene.remove(d));
@@ -1309,7 +1321,9 @@ const SIM = (() => {
     rocketFired = false;
     interceptDone = false;
     rocketPaused = false;
-    interceptArmed = false;
+    totalFlightDistance = 0;
+    distanceTraveled = 0;
+    nextCheckpointIdx = 0;
     trajectoryPoints = [];
     rocketPos.set(0, 0, 0);
     rocketVel.set(0, 0, 0);
@@ -1329,7 +1343,7 @@ const SIM = (() => {
     init, startApproach, launchRocket, resetSim,
     getTrajectoryPoints, getRocketPos, getSwarmCenter,
     getSimState, getMissionTime,
-    pauseRocket, resumeRocket, isRocketPaused, armIntercept, isInterceptArmed,
+    pauseRocket, resumeRocket, isRocketPaused, onStageReached,
     onAlert, onRocketLaunch, onIntercept, onDone
   };
 })();
