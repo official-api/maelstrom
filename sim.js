@@ -7,7 +7,7 @@ const SIM = (() => {
   let renderer, scene, camera, clock;
   let ground, skyDome;
   let rocketGroup = null;
-  let drones = []; 
+  let drones = [];
   let launchPod;
   let radarDish, radarScanRing;
   let explosionParticles = [];
@@ -1212,10 +1212,27 @@ const SIM = (() => {
       if (onStageCb) onStageCb(reachedIdx);
     }
 
-    // Orient rocket along velocity
+    // Orient rocket along velocity — roll-stabilised so the body doesn't spin
+    // around its own axis as the heading changes.
+    // Strategy: build an explicit rotation matrix from (right, up, forward) axes
+    // where "up" is anchored to world Y as much as possible, eliminating the
+    // free roll degree of freedom that setFromUnitVectors leaves unconstrained.
     const dir = rocketVel.clone().normalize();
-    const targetQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-    rocketGroup.quaternion.slerp(targetQuat, Math.min(dt * 12, 1));
+    {
+      // fwd = velocity direction (rocket body Y points along this)
+      const fwd = dir;
+      // Choose a world-up reference; fall back to world-Z if rocket points straight up
+      const worldUp = (Math.abs(fwd.y) > 0.99)
+        ? new THREE.Vector3(0, 0, 1)
+        : new THREE.Vector3(0, 1, 0);
+      // right = fwd × worldUp, then re-orthogonalise up
+      const right = new THREE.Vector3().crossVectors(fwd, worldUp).normalize();
+      const up    = new THREE.Vector3().crossVectors(right, fwd).normalize();
+      // Build rotation matrix: columns are right, fwd, up mapped to X, Y, Z
+      const m = new THREE.Matrix4().makeBasis(right, fwd, up);
+      const targetQuat = new THREE.Quaternion().setFromRotationMatrix(m);
+      rocketGroup.quaternion.slerp(targetQuat, Math.min(dt * 12, 1));
+    }
 
     // ── Realistic control-fin deflection ────────────────────────────────────
     // Decompose the guidance error into the rocket's local pitch and yaw axes,
@@ -1252,8 +1269,11 @@ const SIM = (() => {
       rocketGroup._ctrlFins.forEach((fg, i) => {
         const theta = (i / 4) * Math.PI * 2; // orbital angle of this fin group
         const deflection = pitchCmd * Math.cos(theta) + yawCmd * Math.sin(theta);
-        // Rotate the fin mesh around its local X axis (spanwise hinge)
-        fg.children[0].rotation.x = deflection;
+        // Rotate the cfGrp around its own local X (spanwise hinge at the body root).
+        // cfGrp.rotation.y = orbitalAngle was set at build and is not touched here.
+        // rotation.x is the only axis we drive — this deflects the fin tip in/out
+        // without spinning the rocket body at all.
+        fg.rotation.x = deflection*2;
       });
     }
 
