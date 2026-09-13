@@ -216,54 +216,36 @@ const SIM = (() => {
      GROUND - procedural terrain
   ════════════════════════════════════ */
   function buildGround() {
-    const res = 200, size = 400;
-    const groundGeo = new THREE.PlaneGeometry(size, size, res, res);
+    // Simple flat ground — reliable baseline for r128
+    const groundGeo = new THREE.PlaneGeometry(400, 400, 80, 80);
     const pos = groundGeo.attributes.position;
-    const col = new Float32Array(pos.count * 3);
 
+    // Displace Y (local, pre-rotation) — PlaneGeometry in r128 uses X/Y in plane, Z=0
+    // After rotation.x=-PI/2: local X->worldX, local Y->world-Z, local Z->worldY
+    // So to get height bumps in worldY we set local Z
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i);
-      const z = pos.getZ(i);
-      const h = fbm(x * 0.04, z * 0.04, 6) * 3.5
-              - fbm(x * 0.1 + 5, z * 0.1 + 5, 3) * 0.8;
-      pos.setY(i, h);
-
-      // Vertex colour: grass shades
-      const g = 0.28 + fbm(x * 0.15, z * 0.15, 3) * 0.22;
-      const r = 0.1 + g * 0.35;
-      const b = 0.05 + g * 0.15;
-      col[i * 3 + 0] = r;
-      col[i * 3 + 1] = g;
-      col[i * 3 + 2] = b;
+      const y = pos.getY(i);
+      const h = fbm(x * 0.04, y * 0.04, 4) * 2.5;
+      pos.setZ(i, h);
     }
-    groundGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
     groundGeo.computeVertexNormals();
 
-    const groundMat = new THREE.MeshStandardMaterial({
-      vertexColors: true,
-      roughness: 0.92,
-      metalness: 0.0,
-    });
+    const groundMat = new THREE.MeshLambertMaterial({ color: 0x3d6b2a });
     ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     scene.add(ground);
 
-    // Dirt / gravel patches near launch pod
-    const patches = [
-      { x: -8, z: 8, r: 3.5, col: 0x7a6040 },
-      { x: -10, z: 6, r: 2, col: 0x6a5535 },
-      { x: -6, z: 11, r: 1.5, col: 0x8a7050 },
-    ];
-    patches.forEach(p => {
-      const pg = new THREE.CircleGeometry(p.r, 12);
-      const pm = new THREE.MeshStandardMaterial({ color: p.col, roughness: 0.95 });
-      const pm2 = new THREE.Mesh(pg, pm);
-      pm2.rotation.x = -Math.PI / 2;
-      pm2.position.set(p.x, 0.02, p.z);
-      pm2.receiveShadow = true;
-      scene.add(pm2);
+    // Darker patches near launch pad
+    const patchMat = new THREE.MeshLambertMaterial({ color: 0x6a5535 });
+    [[- 8, 8, 3.5], [-10, 6, 2], [-6, 11, 1.5]].forEach(([px, pz, pr]) => {
+      const pg = new THREE.Mesh(new THREE.CircleGeometry(pr, 10), patchMat);
+      pg.rotation.x = -Math.PI / 2;
+      pg.position.set(px, 0.02, pz);
+      scene.add(pg);
     });
+
   }
 
   /* ════════════════════════════════════
@@ -293,7 +275,7 @@ const SIM = (() => {
       const z = (Math.random() - 0.5) * 120;
       const dist = Math.sqrt(x * x + z * z);
       if (dist < 6) continue; // gap around launch pad
-      const h = fbm(x * 0.04, z * 0.04, 4) * 3.5 - fbm(x * 0.1, z * 0.1, 2) * 0.6;
+      const h = fbm(x * 0.04, z * 0.04, 5) * 3.0 - fbm(x * 0.1 + 5, z * 0.1 + 5, 3) * 0.6;
       dummy.position.set(x, h + 0.18, z);
       dummy.rotation.y = Math.random() * Math.PI * 2;
       const s = 0.7 + Math.random() * 0.8;
@@ -317,7 +299,7 @@ const SIM = (() => {
       [22, -35], [-15, 32],
     ];
     positions.forEach(([x, z]) => {
-      const h = fbm(x * 0.04, z * 0.04, 4) * 3.5;
+      const h = fbm(x * 0.04, z * 0.04, 5) * 3.0 - fbm(x * 0.1 + 5, z * 0.1 + 5, 3) * 0.6;
       const t = buildDetailedTree(x, h, z);
       trees.push(t);
       scene.add(t);
@@ -416,7 +398,7 @@ const SIM = (() => {
     const metalMat = new THREE.MeshStandardMaterial({ color: 0x4a5545, roughness: 0.65, metalness: 0.55 });
     const darkMat  = new THREE.MeshStandardMaterial({ color: 0x2a3030, roughness: 0.55, metalness: 0.7 });
     const blackMat = new THREE.MeshStandardMaterial({ color: 0x181e1e, roughness: 0.4, metalness: 0.8 });
-    const yBase = fbm(-8 * 0.04, 8 * 0.04, 4) * 3.5;
+    const yBase = fbm(-8 * 0.04, 8 * 0.04, 5) * 3.0 - fbm(-8 * 0.1 + 5, 8 * 0.1 + 5, 3) * 0.6;
 
     // ── Baseplate
     const base = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.3, 0.12, 8), metalMat);
