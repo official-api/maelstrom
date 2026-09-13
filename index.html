@@ -37,6 +37,15 @@
       <div id="viewport-panel">
         <div class="panel-label">PRIMARY ENGAGEMENT VIEW</div>
         <canvas id="simCanvas"></canvas>
+        <!-- Loading screen: covers the viewport until the external sky/
+             terrain texture assets have finished downloading, so the scene
+             never pops in bit-by-bit. -->
+        <div id="loadingOverlay">
+          <div class="loading-mark">M</div>
+          <div class="loading-title">INITIALISING DIGITAL TWIN</div>
+          <div class="loading-bar-track"><div class="loading-bar-fill" id="loadingBarFill"></div></div>
+          <div class="loading-sub" id="loadingSubText">LOADING TERRAIN &amp; SKY ASSETS…</div>
+        </div>
         <div id="hud-overlay">
           <div class="hud-corner tl">
             <div class="hud-line">SYS: <span id="hudSys">STANDBY</span></div>
