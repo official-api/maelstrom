@@ -25,6 +25,20 @@ const SIM = (() => {
   let launchOrigin = new THREE.Vector3();
   let launchDir = new THREE.Vector3(0, 1, 0); // world-space direction the launch tube (and loaded rocket) points
   let droneActiveTime = 0; // accumulates only while drones aren't paused
+  // Swarm manoeuvre phases:
+  //   0 = FORWARD  — fly straight ahead toward the pod (initial approach)
+  //   1 = BANKING  — execute a sharp coordinated right bank turn
+  //   2 = CRUISING — settled on new heading, continue toward pod
+  let dronePhase = 0;
+  const DRONE_FORWARD_DURATION = 4.0;  // seconds of straight forward flight before banking
+  const DRONE_BANK_DURATION    = 2.2;  // seconds to complete the right-bank turn
+  // Initial forward direction (swarm starts at 150,78,-130 heading toward pod at -8,y,8)
+  // Normalised XZ forward vector — computed once, reused each frame.
+  const _swarmFwd  = new THREE.Vector3(-158, 0, 138).normalize(); // toward pod
+  // Right-hand perpendicular of _swarmFwd in XZ plane (rotate +90° around Y)
+  const _swarmRight = new THREE.Vector3(_swarmFwd.z, 0, -_swarmFwd.x); // bank target direction
+  // Live heading direction — lerped from fwd → right during bank phase
+  const _swarmHeading = _swarmFwd.clone();
   // Smooth 1/x-style descent: swarm starts high and dives continuously
   // toward the launch pod with no oscillations — altitude drops as
   // START_ALT / (1 + k*t), giving the characteristic steep-then-flattening
@@ -1084,11 +1098,28 @@ const SIM = (() => {
     const swarmAlt = DRONE_DIVE_FLOOR +
       (DRONE_START_ALT - DRONE_DIVE_FLOOR) / (1 + DRONE_DIVE_K * droneActiveTime);
 
-    // Horizontal: entire swarm glides steadily toward the launch pod at (-8, y, 8).
-    // Speed is proportional to remaining XZ distance so the swarm slows as it
-    // closes — matching the hyperbolic shape in the vertical axis.
+    // ── Swarm manoeuvre state machine ──────────────────────────────────────
+    // Phase 0 FORWARD : fly straight in _swarmFwd direction
+    // Phase 1 BANKING : sharp coordinated right-bank turn over DRONE_BANK_DURATION s
+    // Phase 2 CRUISING: settled on _swarmRight heading, resume approach to pod
+    if (!paused) {
+      if (dronePhase === 0 && droneActiveTime >= DRONE_FORWARD_DURATION) {
+        dronePhase = 1; // begin bank
+      } else if (dronePhase === 1 && droneActiveTime >= DRONE_FORWARD_DURATION + DRONE_BANK_DURATION) {
+        dronePhase = 2; // bank complete, cruise on new heading
+        _swarmHeading.copy(_swarmRight);
+      }
+
+      if (dronePhase === 1) {
+        // Smoothly rotate heading from fwd → right using a sine-eased t
+        const bankT = (droneActiveTime - DRONE_FORWARD_DURATION) / DRONE_BANK_DURATION;
+        const ease  = Math.sin(bankT * Math.PI * 0.5); // ease-in: slow start, fast finish
+        _swarmHeading.lerpVectors(_swarmFwd, _swarmRight, ease).normalize();
+      }
+    }
+
     const POD_X = -8, POD_Z = 8;
-    const ADVANCE_SPEED = 0.12; // units per second (XZ plane)
+    const ADVANCE_SPEED = dronePhase === 0 ? 0.18 : 0.14; // slightly faster on initial run-in
 
     // Pitch the formation nose-down proportional to descent rate so it looks
     // like it's actually diving rather than sliding flat.
@@ -1096,6 +1127,19 @@ const SIM = (() => {
       (DRONE_START_ALT - DRONE_DIVE_FLOOR) / (1 + DRONE_DIVE_K * Math.max(droneActiveTime - dt, 0));
     const descentRate = (altPrev - swarmAlt) / Math.max(dt, 0.001); // units/s downward
     const pitchAngle = THREE.MathUtils.clamp(descentRate * 0.018, 0, 0.55); // nose-down in radians
+
+    // Bank roll angle: max ~35° right during the turn, eases back to ~5° settled lean
+    let rollAngle = 0;
+    if (dronePhase === 1) {
+      const bankT = THREE.MathUtils.clamp((droneActiveTime - DRONE_FORWARD_DURATION) / DRONE_BANK_DURATION, 0, 1);
+      // Bell curve: ramps up then back down as the turn completes
+      rollAngle = Math.sin(bankT * Math.PI) * 0.62; // ~35° peak roll right (positive = roll right)
+    } else if (dronePhase === 2) {
+      rollAngle = 0.08; // slight sustained right lean on new heading
+    }
+
+    // Yaw angle: face the current heading direction
+    const headingYaw = Math.atan2(_swarmHeading.x, _swarmHeading.z);
 
     drones.forEach((drone, i) => {
       if (!drone._alive) {
@@ -1110,29 +1154,35 @@ const SIM = (() => {
 
       if (paused) return; // hold exactly where it was when the pause hit
 
-      // Advance the drone's horizontal base toward the pod.
-      const dx = POD_X - drone._dynamicBase.x;
-      const dz = POD_Z - drone._dynamicBase.z;
-      const horizDist = Math.sqrt(dx * dx + dz * dz);
-      if (horizDist > 0.5) {
-        const step = Math.min(ADVANCE_SPEED * dt, horizDist);
-        drone._dynamicBase.x += (dx / horizDist) * step;
-        drone._dynamicBase.z += (dz / horizDist) * step;
+      // Advance the drone's base along the current swarm heading.
+      if (dronePhase === 0 || dronePhase === 1) {
+        // Fly in the live heading direction (straight or curving right)
+        const step = ADVANCE_SPEED * dt;
+        drone._dynamicBase.x += _swarmHeading.x * step;
+        drone._dynamicBase.z += _swarmHeading.z * step;
+      } else {
+        // Phase 2: resume homing toward the pod on the new bearing
+        const dx = POD_X - drone._dynamicBase.x;
+        const dz = POD_Z - drone._dynamicBase.z;
+        const horizDist = Math.sqrt(dx * dx + dz * dz);
+        if (horizDist > 0.5) {
+          const step = Math.min(ADVANCE_SPEED * dt, horizDist);
+          drone._dynamicBase.x += (dx / horizDist) * step;
+          drone._dynamicBase.z += (dz / horizDist) * step;
+        }
       }
 
-      // Apply the shared smooth altitude to every drone (keeping each one's
-      // formation offset relative to the swarm centre).
-      const offsetY = drone._basePos.y - DRONE_START_ALT; // each drone's slot offset
-      drone.position.x = drone._dynamicBase.x + (drone._basePos.x - drone._basePos.x); // slot X stays fixed
-      drone.position.z = drone._dynamicBase.z + (drone._basePos.z - drone._basePos.z); // slot Z stays fixed
+      // Apply the shared smooth altitude, keeping each drone's formation slot offset.
+      const offsetY = drone._basePos.y - DRONE_START_ALT;
       drone.position.x = drone._dynamicBase.x;
       drone.position.z = drone._dynamicBase.z;
       drone.position.y = Math.max(swarmAlt + offsetY, DRONE_DIVE_FLOOR + offsetY);
 
-      // Nose-down pitch into the dive; slow yaw spin for life.
+      // Orientation: face heading, pitch nose-down into dive, roll into the bank.
+      drone.rotation.order = 'YXZ';
+      drone.rotation.y = headingYaw;
       drone.rotation.x = pitchAngle;
-      drone.rotation.z = 0;
-      drone.rotation.y += dt * 0.4;
+      drone.rotation.z = -rollAngle; // negative = right-wing-down in Three.js Z-roll convention
     });
 
     // Lock the guidance target to the swarm's live formation centre.
@@ -1473,6 +1523,8 @@ const SIM = (() => {
     cameraMode = 'orbit';
     cameraTimer = 0;
     droneActiveTime = 0;
+    dronePhase = 0;
+    _swarmHeading.copy(_swarmFwd);
 
     buildDroneSwarm();
     buildRocket(); // reload a fresh rocket into the tube for the next run
