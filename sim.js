@@ -49,6 +49,8 @@ const SIM = (() => {
   let onRocketLaunchCb = null;
   let onInterceptCb = null;
   let onDoneCb = null;
+  let onLoadProgressCb = null;
+  let onAssetsReadyCb = null;
 
   // ─── Noise helpers ───
   function hash(n) { return Math.abs(Math.sin(n * 127.1 + 311.7) * 43758.5453) % 1; }
@@ -95,6 +97,21 @@ const SIM = (() => {
     camera = new THREE.PerspectiveCamera(52, W / H, 0.05, 2000);
     camera.position.set(-14, 7, 20);
     camera.lookAt(0, 2, 0);
+
+    // All external texture/HDRI loads (sky, ground, mountains) go through
+    // three.js's shared DefaultLoadingManager, so we can report combined
+    // progress and a single "everything's ready" moment back to the UI for
+    // the loading screen — this must be wired up BEFORE buildSky/buildGround/
+    // buildMountains kick off their loads below.
+    THREE.DefaultLoadingManager.onProgress = (url, itemsLoaded, itemsTotal) => {
+      if (onLoadProgressCb) onLoadProgressCb(itemsLoaded, itemsTotal);
+    };
+    THREE.DefaultLoadingManager.onLoad = () => {
+      if (onAssetsReadyCb) onAssetsReadyCb();
+    };
+    THREE.DefaultLoadingManager.onError = (url) => {
+      console.warn('[MAELSTROM] Asset failed to load:', url);
+    };
 
     buildLighting();
     buildSky();
@@ -251,7 +268,11 @@ const SIM = (() => {
   function buildGround() {
     const loader = new THREE.TextureLoader();
     loader.crossOrigin = 'anonymous';
-    const REPEAT = 30;
+    // Ground must extend at least as far as the mountain ring's base radius
+    // (see buildMountains) in every direction, or the horizon shows a gap of
+    // empty space between the flat plane and the surrounding peaks.
+    const GROUND_SIZE = 700; // half-width 350, comfortably beyond MOUNTAIN_RADIUS (300)
+    const REPEAT = 30 * (GROUND_SIZE / 400); // keep texel density constant vs. the old 400-unit plane
 
     const diffuseMap  = loadRepeatingTexture(loader, GROUND_TEX_BASE + 'diff_2k.jpg', REPEAT, REPEAT, true);
     const normalMap   = loadRepeatingTexture(loader, GROUND_TEX_BASE + 'nor_gl_2k.jpg', REPEAT, REPEAT, false);
@@ -261,7 +282,7 @@ const SIM = (() => {
 
     // Higher subdivision than the old flat plane so both the broad dune
     // undulation (fbm) and the fine photographic displacement map read well.
-    const groundGeo = new THREE.PlaneGeometry(400, 400, 128, 128);
+    const groundGeo = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE, 160, 160);
     const pos = groundGeo.attributes.position;
 
     // Displace Y (local, pre-rotation) — PlaneGeometry in r128 uses X/Y in plane, Z=0
@@ -317,9 +338,12 @@ const SIM = (() => {
     const normalMap  = loadRepeatingTexture(loader, ROCK_TEX_BASE + 'nor_gl_2k.jpg', 18, 3, false);
     const roughMap   = loadRepeatingTexture(loader, ROCK_TEX_BASE + 'rough_2k.jpg', 18, 3, false);
 
-    const radius = 300;
+    // Must stay comfortably inside the ground plane's half-width (350, see
+    // buildGround) so the mountain ring's base is always covered by textured
+    // ground and never leaves a visible gap of empty space at the horizon.
+    const MOUNTAIN_RADIUS = 300;
     const height = 95;
-    const geo = new THREE.CylinderGeometry(radius, radius * 1.04, height, 128, 10, true);
+    const geo = new THREE.CylinderGeometry(MOUNTAIN_RADIUS, MOUNTAIN_RADIUS * 1.04, height, 128, 10, true);
     const pos = geo.attributes.position;
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
@@ -789,7 +813,10 @@ const SIM = (() => {
     // Placed a long way out (~210 units) so the missile's flight has plenty
     // of runway for the engine / aerofoil / tracking stages to each get
     // real screen time before final approach.
-    const swarmCenter = new THREE.Vector3(150, 14, -130);
+    // Altitude raised well above the mountain ridge-line (~45-60 units at
+    // this bearing) so the swarm silhouettes cleanly against open sky
+    // instead of camouflaging against the rock backdrop.
+    const swarmCenter = new THREE.Vector3(150, 78, -130);
     droneSwarmCenter.copy(swarmCenter);
 
     const offsets = [
@@ -1455,12 +1482,15 @@ const SIM = (() => {
   function onRocketLaunch(cb) { onRocketLaunchCb = cb; }
   function onIntercept(cb) { onInterceptCb = cb; }
   function onDone(cb) { onDoneCb = cb; }
+  function onLoadProgress(cb) { onLoadProgressCb = cb; }
+  function onAssetsReady(cb) { onAssetsReadyCb = cb; }
 
   return {
     init, startApproach, launchRocket, resetSim,
     getTrajectoryPoints, getRocketPos, getSwarmCenter,
     getSimState, getMissionTime,
     pauseRocket, resumeRocket, isRocketPaused, onStageReached,
-    onAlert, onRocketLaunch, onIntercept, onDone
+    onAlert, onRocketLaunch, onIntercept, onDone,
+    onLoadProgress, onAssetsReady
   };
 })();
