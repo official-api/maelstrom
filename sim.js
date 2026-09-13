@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════
-   MAELSTROM — THREE.JS 3D SIMULATION ENGINE v2
+   MAELSTROM - THREE.JS 3D SIMULATION ENGINE v2
    Photorealistic terrain, detailed rocket, improved guidance
    ═══════════════════════════════════════════ */
 
@@ -112,7 +112,7 @@ const SIM = (() => {
     const ambient = new THREE.AmbientLight(0x304060, 0.8);
     scene.add(ambient);
 
-    // Sun — warm golden hour
+    // Sun - warm golden hour
     sunLight = new THREE.DirectionalLight(0xffe0b0, 3.5);
     sunLight.position.set(60, 80, -30);
     sunLight.castShadow = true;
@@ -127,12 +127,12 @@ const SIM = (() => {
     sunLight.shadow.normalBias = 0.02;
     scene.add(sunLight);
 
-    // Sky fill — cool blue opposite
+    // Sky fill - cool blue opposite
     const fillLight = new THREE.DirectionalLight(0x4488cc, 0.6);
     fillLight.position.set(-30, 20, 40);
     scene.add(fillLight);
 
-    // Hemisphere — sky/ground bounce
+    // Hemisphere - sky/ground bounce
     const hemi = new THREE.HemisphereLight(0x6699cc, 0x445533, 0.9);
     scene.add(hemi);
 
@@ -185,7 +185,7 @@ const SIM = (() => {
     skyDome = new THREE.Mesh(skyGeo, skyMat);
     scene.add(skyDome);
 
-    // Clouds — simple billboard planes
+    // Clouds - simple billboard planes
     buildClouds();
   }
 
@@ -213,7 +213,7 @@ const SIM = (() => {
   }
 
   /* ════════════════════════════════════
-     GROUND — procedural terrain
+     GROUND - procedural terrain
   ════════════════════════════════════ */
   function buildGround() {
     const res = 200, size = 400;
@@ -267,7 +267,7 @@ const SIM = (() => {
   }
 
   /* ════════════════════════════════════
-     GRASS TUFTS — instanced
+     GRASS TUFTS - instanced
   ════════════════════════════════════ */
   function buildGrass() {
     const bladeCount = 3000;
@@ -307,7 +307,7 @@ const SIM = (() => {
   }
 
   /* ════════════════════════════════════
-     TREES — detailed
+     TREES - detailed
   ════════════════════════════════════ */
   function buildTrees() {
     const positions = [
@@ -331,7 +331,7 @@ const SIM = (() => {
     const treeH = 6 + Math.random() * 5;
     const treeType = Math.random() > 0.5 ? 'pine' : 'deciduous';
 
-    // Trunk — tapered cylinder with bark detail
+    // Trunk - tapered cylinder with bark detail
     const trunkSegs = 10;
     const trunkGeo = new THREE.CylinderGeometry(
       0.12 + Math.random() * 0.06,
@@ -406,7 +406,7 @@ const SIM = (() => {
   }
 
   /* ════════════════════════════════════
-     LAUNCH POD — detailed military
+     LAUNCH POD - detailed military
   ════════════════════════════════════ */
   function buildLaunchPod() {
     launchPod = new THREE.Group();
@@ -511,7 +511,7 @@ const SIM = (() => {
     boomPole.position.y = 0.45;
     radarBoom.add(boomPole);
 
-    // Radar dish — parabolic look
+    // Radar dish - parabolic look
     const dishGeo = new THREE.SphereGeometry(0.38, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55);
     const dishMat = new THREE.MeshStandardMaterial({ color: 0x6a7a70, roughness: 0.4, metalness: 0.7, side: THREE.DoubleSide });
     radarDish = new THREE.Mesh(dishGeo, dishMat);
@@ -527,7 +527,7 @@ const SIM = (() => {
 
     launchPod.add(radarBoom);
 
-    // Compute launch origin — tip of tube cluster in world space
+    // Compute launch origin - tip of tube cluster in world space
     // Tube group centre at yBase+2.65, rotated, tubes extend +X by 0.6+1.2 = 1.2 from centre
     const podWorldPos = new THREE.Vector3(-8, 0, 8);
     const tubeLen = 1.2;
@@ -539,8 +539,8 @@ const SIM = (() => {
   }
 
   /* ════════════════════════════════════
-     ROCKET — detailed geometry
-     840mm = 0.84 units, scaled ×10 for scene
+     ROCKET - detailed geometry
+     840mm = 0.84 units, scaled *10 for scene
   ════════════════════════════════════ */
   function buildRocket() {
     rocketGroup = new THREE.Group();
@@ -551,14 +551,14 @@ const SIM = (() => {
     const noseMat  = new THREE.MeshStandardMaterial({ color: 0x334455, roughness: 0.18, metalness: 0.9 });
     const nozzleMat= new THREE.MeshStandardMaterial({ color: 0x1a2028, roughness: 0.3, metalness: 0.95 });
 
-    // Rocket total length: 840mm. In scene units (×10): 8.4 units.
+    // Rocket total length: 840mm. In scene units (*10): 8.4 units.
     // Sections:
     //   Nose tip: hemisphere r=0.45 units (45mm radius)
     //   Forward body: from y=0 to y=5.4 (540mm)
     //   Engine section: y=-3.0 to y=0 (300mm)
     // Coords: nose tip at +4.2, tail at -4.2, body centre at 0
 
-    // ── Nose — hemisphere
+    // ── Nose - hemisphere
     const noseGeo = new THREE.SphereGeometry(0.45, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.5);
     const nose = new THREE.Mesh(noseGeo, noseMat);
     nose.position.y = 4.2;
@@ -624,7 +624,7 @@ const SIM = (() => {
       rocketGroup.add(ering);
     }
 
-    // ── Nozzle — converging-diverging bell
+    // ── Nozzle - converging-diverging bell
     const nozzlePts = [];
     for (let i = 0; i <= 24; i++) {
       const t = i / 24;
@@ -639,7 +639,7 @@ const SIM = (() => {
     nozzle.castShadow = true;
     rocketGroup.add(nozzle);
 
-    // ── FIXED FINS × 4 — clipped delta, forward of engine section
+    // ── FIXED FINS * 4 - clipped delta, forward of engine section
     // Control fins sit at 0°, 90°, 180°, 270°.
     // Fixed fins are staggered 45° between them: 45°, 135°, 225°, 315°.
     for (let i = 0; i < 4; i++) {
@@ -652,8 +652,8 @@ const SIM = (() => {
       rocketGroup.add(fxGrp);
     }
 
-    // ── CONTROL FINS × 4 — rectangular, all-moving, at aft section
-    // Sit at 0°, 90°, 180°, 270° — interleaved with fixed fins above
+    // ── CONTROL FINS * 4 - rectangular, all-moving, at aft section
+    // Sit at 0°, 90°, 180°, 270° - interleaved with fixed fins above
     const ctrlFinGroups = [];
     for (let i = 0; i < 4; i++) {
       const orbitalAngle = (i / 4) * Math.PI * 2; // 0°, 90°, 180°, 270°
@@ -667,7 +667,7 @@ const SIM = (() => {
     }
     rocketGroup._ctrlFins = ctrlFinGroups;
 
-    // ── Engine flame — multi-layer
+    // ── Engine flame - multi-layer
     const flameMat1 = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 });
     const flameMat2 = new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.75 });
     const flameMat3 = new THREE.MeshBasicMaterial({ color: 0xff3300, transparent: true, opacity: 0.5, side: THREE.BackSide });
@@ -696,7 +696,7 @@ const SIM = (() => {
     engineLight.visible = false;
     rocketGroup.add(engineLight);
 
-    rocketGroup.scale.setScalar(1.0); // Already in scene units ×10
+    rocketGroup.scale.setScalar(1.0); // Already in scene units *10
     rocketPos.copy(launchOrigin);
     rocketGroup.position.copy(rocketPos);
     scene.add(rocketGroup);
@@ -711,7 +711,7 @@ const SIM = (() => {
     // The parent fxGrp has rotation.y = orbitalAngle, which spins the group around the
     // rocket's Y axis. The fin's root is at the group origin; span goes in +X (radially
     // outward from the rocket), height in +Y (along the rocket body), Z = thickness.
-    // No rotation needed on the mesh itself — the group's rotation.y handles everything.
+    // No rotation needed on the mesh itself - the group's rotation.y handles everything.
     const shape = new THREE.Shape();
     shape.moveTo(0,    0);      // root aft corner
     shape.lineTo(0,    0.65);   // root forward corner
@@ -748,17 +748,17 @@ const SIM = (() => {
   }
 
   /* ════════════════════════════════════
-     DRONE SWARM — placed far away
+     DRONE SWARM - placed far away
   ════════════════════════════════════ */
   function buildDroneSwarm() {
-    // Place swarm FAR — 90 units away so rocket has ample flight time
+    // Place swarm FAR - 90 units away so rocket has ample flight time
     const swarmCenter = new THREE.Vector3(55, 10, -45);
     droneSwarmCenter.copy(swarmCenter);
 
     const offsets = [
-      [0,0,0],[4,1.5,-2],[−3,2,2],[2,-2,4],[−2,3,-3],
-      [6,-1,3],[−4,-2,-3],[3,3.5,-4],[−2,-3,3],[5,2,2],
-      [−5,1,-1],[1,-1.5,-5],[3.5,2.5,1],[−1,3.5,3]
+      [0,0,0],[4,1.5,-2],[-3,2,2],[2,-2,4],[-2,3,-3],
+      [6,-1,3],[-4,-2,-3],[3,3.5,-4],[-2,-3,3],[5,2,2],
+      [-5,1,-1],[1,-1.5,-5],[3.5,2.5,1],[-1,3.5,3]
     ].map(arr => arr.map ? arr : [0,0,0]);
 
     const droneOffsets = [
@@ -977,7 +977,7 @@ const SIM = (() => {
   }
 
   function spawnSoftKillFibers(center) {
-    // Carbon fiber burst — thin filaments
+    // Carbon fiber burst - thin filaments
     for (let i = 0; i < 500; i++) {
       const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
       const dist = 1 + Math.random() * 5;
@@ -1062,7 +1062,7 @@ const SIM = (() => {
     if (!rocketFired || !rocketGroup) return;
     if (interceptDone) return;
 
-    // Pure pursuit with strong gain — guaranteed hit
+    // Pure pursuit with strong gain - guaranteed hit
     const toTarget = droneSwarmCenter.clone().sub(rocketPos);
     const dist = toTarget.length();
     const toTargetNorm = toTarget.clone().normalize();
@@ -1073,7 +1073,7 @@ const SIM = (() => {
     const steer = toTargetNorm.clone().sub(currentDir).multiplyScalar(steerGain);
     rocketVel.add(steer);
 
-    // Speed — accelerate to max
+    // Speed - accelerate to max
     const maxSpeed = 28;
     const spd = rocketVel.length();
     if (spd < maxSpeed) {
@@ -1090,7 +1090,7 @@ const SIM = (() => {
     const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
     rocketGroup.quaternion.slerp(quat, Math.min(dt * 12, 1));
 
-    // Control fin deflection — hinge is along the span (local Z of the group after rotation.x = -PI/2)
+    // Control fin deflection - hinge is along the span (local Z of the group after rotation.x = -PI/2)
     // Deflecting the child fin mesh around its local Z gives a realistic pitch/yaw deflection
     controlFinAngle += dt * finRotDir * 2.2;
     if (Math.abs(controlFinAngle) > 0.35) finRotDir *= -1;
