@@ -504,12 +504,12 @@ const SIM = (() => {
     // Coords: nose tip at +4.2, tail at -4.2, body centre at 0
 
     // ── Nose - hemisphere
-    const noseGeo = new THREE.SphereGeometry(0.45, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.5);
-    const nose = new THREE.Mesh(noseGeo, noseMat);
-    nose.position.y = 4.2;
-    nose.rotation.x = Math.PI;
-    nose.castShadow = true;
-    rocketGroup.add(nose);
+    //const noseGeo = new THREE.SphereGeometry(0.45, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.5);
+    //const nose = new THREE.Mesh(noseGeo, noseMat);
+    //nose.position.y = 4.2;
+    //nose.rotation.x = Math.PI;
+    //nose.castShadow = true;
+    //rocketGroup.add(nose);
 
     // ── Ogive forward fairing (nose to forward body junction)
     const fairingPts = [];
