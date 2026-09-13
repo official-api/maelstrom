@@ -1195,8 +1195,8 @@ const SIM = (() => {
     }
 
     // Accelerate along new direction
-    const maxSpeed = 30;
-    const spd = Math.min(rocketVel.length() + 12 * dt, maxSpeed);
+    const maxSpeed = 8;
+    const spd = Math.min(rocketVel.length() + 3 * dt, maxSpeed);
     rocketVel.copy(newDir).multiplyScalar(spd);
 
 
