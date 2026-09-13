@@ -86,7 +86,6 @@ const SIM = (() => {
     buildLighting();
     buildSky();
     buildGround();
-    buildGrass();
     buildTrees();
     buildLaunchPod();
     buildDroneSwarm();
@@ -235,7 +234,7 @@ const SIM = (() => {
     }
     groundGeo.computeVertexNormals();
 
-    const groundMat = new THREE.MeshLambertMaterial({ color: 0x3d6b2a });
+    const groundMat = new THREE.MeshLambertMaterial({ color: 0x4a7c35 });
     ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
@@ -250,46 +249,6 @@ const SIM = (() => {
       scene.add(pg);
     });
 
-  }
-
-  /* ════════════════════════════════════
-     GRASS TUFTS - instanced
-  ════════════════════════════════════ */
-  function buildGrass() {
-    const bladeCount = 3000;
-    const bladeGeo = new THREE.PlaneGeometry(0.12, 0.45, 1, 4);
-    // Bend blade vertices up
-    const bPos = bladeGeo.attributes.position;
-    for (let i = 0; i < bPos.count; i++) {
-      const y = bPos.getY(i);
-      const bend = y / 0.45;
-      bPos.setX(i, bPos.getX(i) + bend * bend * 0.08 * (Math.random() > 0.5 ? 1 : -1));
-    }
-    bladeGeo.computeVertexNormals();
-
-    const bladeMat = new THREE.MeshStandardMaterial({
-      color: 0x3d6b2e, roughness: 1, metalness: 0,
-      side: THREE.DoubleSide, alphaTest: 0.1
-    });
-
-    const mesh = new THREE.InstancedMesh(bladeGeo, bladeMat, bladeCount);
-    const dummy = new THREE.Object3D();
-    for (let i = 0; i < bladeCount; i++) {
-      const x = (Math.random() - 0.5) * 120;
-      const z = (Math.random() - 0.5) * 120;
-      const dist = Math.sqrt(x * x + z * z);
-      if (dist < 6) continue; // gap around launch pad
-      const h = fbm(x * 0.04, z * 0.04, 5) * 3.0 - fbm(x * 0.1 + 5, z * 0.1 + 5, 3) * 0.6;
-      dummy.position.set(x, h + 0.18, z);
-      dummy.rotation.y = Math.random() * Math.PI * 2;
-      const s = 0.7 + Math.random() * 0.8;
-      dummy.scale.set(s, s * (0.8 + Math.random() * 0.5), s);
-      dummy.updateMatrix();
-      mesh.setMatrixAt(i, dummy.matrix);
-    }
-    mesh.castShadow = false;
-    mesh.receiveShadow = false;
-    scene.add(mesh);
   }
 
   /* ════════════════════════════════════
