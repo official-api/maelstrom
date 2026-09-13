@@ -188,6 +188,11 @@
     stageIndex = Math.min(stageIndex + 1, FLIGHT_STAGES.length);
     el('nextStageOverlay').classList.add('hidden');
     SIM.resumeRocket();
+    if (stageIndex >= FLIGHT_STAGES.length) {
+      // All three staged animations have been dismissed -- let the missile
+      // actually close the last bit of distance and detonate.
+      SIM.armIntercept();
+    }
     setStatus('MISSILE IN FLIGHT', false);
   }
 
