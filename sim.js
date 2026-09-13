@@ -112,11 +112,11 @@ const SIM = (() => {
   ════════════════════════════════════ */
   function buildLighting() {
     // Rich ambient sky light
-    const ambient = new THREE.AmbientLight(0x304060, 0.8);
+    const ambient = new THREE.AmbientLight(0x304060, 0.35);
     scene.add(ambient);
 
     // Sun - warm golden hour
-    sunLight = new THREE.DirectionalLight(0xffe0b0, 3.5);
+    sunLight = new THREE.DirectionalLight(0xffd080, 2.0);
     sunLight.position.set(60, 80, -30);
     sunLight.castShadow = true;
     sunLight.shadow.mapSize.set(4096, 4096);
@@ -136,7 +136,7 @@ const SIM = (() => {
     scene.add(fillLight);
 
     // Hemisphere - sky/ground bounce
-    const hemi = new THREE.HemisphereLight(0x6699cc, 0x445533, 0.9);
+    const hemi = new THREE.HemisphereLight(0x4477aa, 0x1a3310, 0.5);
     scene.add(hemi);
 
     // Ground bounce (warm)
@@ -234,7 +234,7 @@ const SIM = (() => {
     }
     groundGeo.computeVertexNormals();
 
-    const groundMat = new THREE.MeshLambertMaterial({ color: 0x4a7c35 });
+    const groundMat = new THREE.MeshLambertMaterial({ color: 0x2d5a1b });
     ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
