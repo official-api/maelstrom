@@ -28,6 +28,7 @@ const SIM = (() => {
   let engineFlame, engineFlame2, engineLight;
   let rocketFired = false;
   let interceptDone = false;
+  let rocketPaused = false;
   let finRotDir = 1;
   let radarScanAngle = 0;
   let cameraTimer = 0;
@@ -1003,6 +1004,24 @@ const SIM = (() => {
     if (!rocketFired || !rocketGroup) return;
     if (interceptDone) return;
 
+    if (rocketPaused) {
+      // Flight is held between animation stages: the airframe stays put in
+      // space (no position/velocity/turn updates, no intercept check) but
+      // the motor keeps burning -- flame flicker and exhaust trail continue
+      // exactly as in normal flight so the hold doesn't look like a freeze-frame.
+      if (engineFlame) {
+        const f1 = 0.82 + Math.random() * 0.36;
+        const f2 = 0.88 + Math.random() * 0.24;
+        engineFlame.scale.set(f1, f1 * (0.9 + Math.random() * 0.2), f1);
+        engineFlame2.scale.set(f2, f2 * (0.85 + Math.random() * 0.3), f2);
+        const flameOuter = rocketGroup.getObjectByName('flameOuter');
+        if (flameOuter) flameOuter.scale.setScalar(0.9 + Math.random() * 0.2);
+        engineLight.intensity = 8 + Math.random() * 4;
+      }
+      if (Math.random() < 0.9) spawnTrail();
+      return;
+    }
+
     // Direct pursuit with clamped turn rate -- guaranteed convergence
     const toTarget = droneSwarmCenter.clone().sub(rocketPos);
     const dist = toTarget.length();
@@ -1248,6 +1267,10 @@ const SIM = (() => {
   function getSimState() { return simState; }
   function getMissionTime() { return missionTime; }
 
+  function pauseRocket() { rocketPaused = true; }
+  function resumeRocket() { rocketPaused = false; }
+  function isRocketPaused() { return rocketPaused; }
+
   function resetSim() {
     drones.forEach(d => scene.remove(d));
     drones = [];
@@ -1265,6 +1288,7 @@ const SIM = (() => {
     missionTime = 0;
     rocketFired = false;
     interceptDone = false;
+    rocketPaused = false;
     trajectoryPoints = [];
     rocketPos.set(0, 0, 0);
     rocketVel.set(0, 0, 0);
@@ -1284,6 +1308,7 @@ const SIM = (() => {
     init, startApproach, launchRocket, resetSim,
     getTrajectoryPoints, getRocketPos, getSwarmCenter,
     getSimState, getMissionTime,
+    pauseRocket, resumeRocket, isRocketPaused,
     onAlert, onRocketLaunch, onIntercept, onDone
   };
 })();
