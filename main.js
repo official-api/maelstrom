@@ -9,22 +9,18 @@
   let simPhase = 'standby';   // standby | approach | killSelect | launch | flight | tracking | intercept | done
   let killMode = null;
   let activePanel = null;
-  let panelPhaseTimer = 0;
   let lastT = performance.now();
   let missionStartTime = null;
   let trajectoryPoints = [];
 
   /* ─── In-flight panel stages ───
-     Each entry plays for `duration` seconds, then the rocket is paused
-     (flame/exhaust keep animating) and the mission holds for a "NEXT STAGE"
-     tap before moving on to the following animation. */
-  const FLIGHT_STAGES = [
-    { panel: 'engine',   duration: 3.5 },
-    { panel: 'aerofoil', duration: 3.5 },
-    { panel: 'tracking', duration: 3.5 }
-  ];
-  let stageIndex = 0;
+     sim.js pauses the missile (motor still burning) at 25% / 50% / 75% of
+     the total flight distance and fires onStageReached(idx). Each pause
+     holds the CURRENT panel on screen until "NEXT STAGE" is tapped, at
+     which point we switch to the panel below and let the missile resume. */
+  const NEXT_PANEL_AFTER_STAGE = ['aerofoil', 'tracking', null]; // null = no panel change, just resume to finish flight
   let flightPaused = false;
+  let pendingNextPanel = null;
 
   /* ─── DOM Refs ─── */
   const el = id => document.getElementById(id);
@@ -56,6 +52,7 @@
     SIM.onRocketLaunch(onRocketLaunched);
     SIM.onIntercept(onInterceptHit);
     SIM.onDone(onSimDone);
+    SIM.onStageReached(onStageReached);
 
     showPhase('standby');
     startLoop();
@@ -100,9 +97,8 @@
     setStatus('MISSILE ARMED - LAUNCHING', true);
     showPhase('engine');
     activePanel = 'engine';
-    panelPhaseTimer = 0;
-    stageIndex = 0;
     flightPaused = false;
+    pendingNextPanel = null;
     el('nextStageOverlay').classList.add('hidden');
 
     // Update payload panel for selected mode
@@ -120,8 +116,8 @@
   function onInterceptHit(mode) {
     simPhase = 'intercept';
     activePanel = 'payload';
-    panelPhaseTimer = 0;
     flightPaused = false;
+    pendingNextPanel = null;
     el('nextStageOverlay').classList.add('hidden');
     showPhase('payload');
     setStatus('INTERCEPT - WARHEAD DEPLOYED', true);
@@ -145,11 +141,10 @@
     simPhase = 'standby';
     killMode = null;
     activePanel = null;
-    panelPhaseTimer = 0;
     trajectoryPoints = [];
     missionStartTime = null;
-    stageIndex = 0;
     flightPaused = false;
+    pendingNextPanel = null;
 
     el('alertBanner').classList.add('hidden');
     el('alertBanner').style.borderColor = '';
@@ -173,10 +168,11 @@
     SIM.resetSim();
   }
 
-  /* ─── Flight stage gating ─── */
-  function pauseFlight() {
+  /* ─── Flight stage gating (driven by SIM's distance checkpoints) ─── */
+  function onStageReached(stageIdx) {
+    // SIM has already paused the missile in place (motor still burning).
     flightPaused = true;
-    SIM.pauseRocket();
+    pendingNextPanel = NEXT_PANEL_AFTER_STAGE[stageIdx] ?? null;
     setStatus('HOLDING - AWAITING NEXT STAGE', false);
     el('nextStageOverlay').classList.remove('hidden');
   }
@@ -184,15 +180,13 @@
   function onNextStage() {
     if (!flightPaused) return;
     flightPaused = false;
-    panelPhaseTimer = 0;
-    stageIndex = Math.min(stageIndex + 1, FLIGHT_STAGES.length);
     el('nextStageOverlay').classList.add('hidden');
-    SIM.resumeRocket();
-    if (stageIndex >= FLIGHT_STAGES.length) {
-      // All three staged animations have been dismissed -- let the missile
-      // actually close the last bit of distance and detonate.
-      SIM.armIntercept();
+    if (pendingNextPanel) {
+      activePanel = pendingNextPanel;
+      showPhase(pendingNextPanel);
     }
+    pendingNextPanel = null;
+    SIM.resumeRocket();
     setStatus('MISSILE IN FLIGHT', false);
   }
 
@@ -217,18 +211,8 @@
       el('missionTimer').textContent = `T+${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
     }
 
-    // Advance panel phases during flight, pausing the rocket in place
-    // (motor still burning) between each stage until the user taps "next stage"
-    if ((simPhase === 'flight' || simPhase === 'launch') && !flightPaused) {
-      panelPhaseTimer += dt;
-
-      const stage = FLIGHT_STAGES[Math.min(stageIndex, FLIGHT_STAGES.length - 1)];
-      if (activePanel !== stage.panel) { activePanel = stage.panel; showPhase(stage.panel); }
-
-      if (stageIndex < FLIGHT_STAGES.length && panelPhaseTimer >= stage.duration) {
-        pauseFlight();
-      }
-    }
+    // (Panel switching between engine/aerofoil/tracking now happens via the
+    // onStageReached / onNextStage handlers above, not on a timer here.)
 
     // Update telemetry HUD
     const rPos = SIM.getRocketPos();
