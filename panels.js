@@ -8,16 +8,33 @@ const PANELS = (() => {
   /* ─── DPI-aware canvas setup ─── */
   function setupHiDPI(canvas) {
     const dpr = window.devicePixelRatio || 1;
-    const rect = canvas.getBoundingClientRect();
-    const w = canvas.offsetWidth || canvas.width;
-    const h = canvas.offsetHeight || canvas.height;
-    canvas.width  = w * dpr;
-    canvas.height = h * dpr;
+    const w = canvas.offsetWidth  || parseInt(canvas.style.width)  || canvas.width  || 340;
+    const h = canvas.offsetHeight || parseInt(canvas.style.height) || canvas.height || 200;
+    canvas.width  = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
     const ctx = canvas.getContext('2d');
     ctx.scale(dpr, dpr);
     canvas._cssW = w;
     canvas._cssH = h;
     return ctx;
+  }
+
+  // Call before each draw to handle panel resize
+  function syncCanvas(canvas, ctx) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.offsetWidth  || canvas._cssW || 340;
+    const h = canvas.offsetHeight || canvas._cssH || 200;
+    if (w < 1 || h < 1) return false;
+    const needW = Math.round(w * dpr);
+    const needH = Math.round(h * dpr);
+    if (canvas.width !== needW || canvas.height !== needH) {
+      canvas.width  = needW;
+      canvas.height = needH;
+      ctx.scale(dpr, dpr);
+    }
+    canvas._cssW = w;
+    canvas._cssH = h;
+    return true;
   }
 
   function clear(ctx, w, h) {
