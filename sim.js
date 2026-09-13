@@ -511,28 +511,23 @@ const SIM = (() => {
     //nose.castShadow = true;
     //rocketGroup.add(nose);
 
-    // ── Ogive forward fairing (nose to forward body junction)
-    const fairingPts = [];
-    for (let i = 0; i <= 20; i++) {
-      const t = i / 20;
-      const r = 0.45 * Math.sin(t * Math.PI * 0.5);
-      fairingPts.push(new THREE.Vector2(r, 4.2 - t * 0.9));
-    }
-    const fairingGeo = new THREE.LatheGeometry(fairingPts, 20);
-    const fairing = new THREE.Mesh(fairingGeo, noseMat);
-    fairing.castShadow = true;
-    rocketGroup.add(fairing);
+        // ── Hemispherical Nose Cone (Radius = 0.45, matching the body width)
+    // Capped at half a sphere (Math.PI * 0.5) to form a clean dome profile
+    const noseGeo = new THREE.SphereGeometry(0.45, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.5);
+    const nose = new THREE.Mesh(noseGeo, noseMat);
+    // Positioned exactly on top of the forward cylinder body
+    nose.position.y = 3.3; 
+    nose.castShadow = true;
+    rocketGroup.add(nose);
 
     // ── Forward body (540mm)
     const bodyGeo = new THREE.CylinderGeometry(0.45, 0.45, 5.4, 24);
     const body = new THREE.Mesh(bodyGeo, bodyMat);
-    body.position.y = 0.9;  // centre of 5.4 length starting at 3.3...-2.1? Let me recalc:
-    // nose tip at 4.2, hemisphere ends at 4.2-0.45=3.75 approx
-    // body: from 3.3 (top) down to -2.1 (bottom of forward body = engine start)
-    // body centre = (3.3 + -2.1) / 2 = 0.6
-    body.position.y = 0.6;
+    // Centered at y=0.6 so that its top edge hits exactly y=3.3 (where the hemisphere starts)
+    body.position.y = 0.6; 
     body.castShadow = true;
     rocketGroup.add(body);
+
 
     // Paint stripe / panel lines on body
     const stripe1 = new THREE.Mesh(
