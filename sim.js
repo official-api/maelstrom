@@ -711,10 +711,13 @@ const SIM = (() => {
 
     // ── CONTROL FINS * 4 - rectangular, all-moving, at aft section
     // Sit at 0°, 90°, 180°, 270° - interleaved with fixed fins above
+   // ── CONTROL FINS * 4 - rectangular, all-moving, at aft section
+    // Sit at 0°, 90°, 180°, 270° - interleaved with fixed fins above
     const ctrlFinGroups = [];
     for (let i = 0; i < 4; i++) {
       const orbitalAngle = (i / 4) * Math.PI * 2; // 0°, 90°, 180°, 270°
       const cfGrp = new THREE.Group();
+      cfGrp.rotation.order = 'YXZ'; // <-- Ensures deflection rotates around the fin's radial shaft
       cfGrp.position.y = -4.6;
       cfGrp.rotation.y = orbitalAngle;
       const fin = makeCtrlFin(finMat);
@@ -1253,23 +1256,21 @@ const SIM = (() => {
     //   delta_i = pitchErr * cos(theta_i) + yawErr * sin(theta_i)
     // — exactly the projection of the commanded moment onto each fin's axis.
    if (rocketGroup._ctrlFins) {
-     const bodyFwd = currentDir.clone();
-     const worldUp = (Math.abs(bodyFwd.y) > 0.99) ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
-     const bodyRight = new THREE.Vector3().crossVectors(bodyFwd, worldUp).normalize();
-     const bodyUp    = new THREE.Vector3().crossVectors(bodyRight, bodyFwd).normalize();
-   
-     // Calculate angular error using cross product rather than vector subtraction
-     const rotAxis = new THREE.Vector3().crossVectors(currentDir, desiredDir);
-     const pitchCmd = THREE.MathUtils.clamp(rotAxis.dot(bodyRight) * 150, -0.6, 0.6);
-     const yawCmd   = THREE.MathUtils.clamp(-rotAxis.dot(bodyUp)   * 150, -0.6, 0.6);
-   
-     rocketGroup._ctrlFins.forEach((fg, i) => {
-       const theta = (i / 4) * Math.PI * 2;
-       // Add a slight high-frequency flutter so fins stay dynamic during tracking
-       const flutter = Math.sin(missionTime * 30 + i) * 0.05;
-       fg.rotation.x = pitchCmd * Math.cos(theta) + yawCmd * Math.sin(theta) + flutter;
-     });
-   }
+      const bodyFwd = currentDir.clone();
+      const worldUp = (Math.abs(bodyFwd.y) > 0.99) ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
+      const bodyRight = new THREE.Vector3().crossVectors(bodyFwd, worldUp).normalize();
+      const bodyUp    = new THREE.Vector3().crossVectors(bodyRight, bodyFwd).normalize();
+
+      // Steering cross-product vector
+      const rotAxis = new THREE.Vector3().crossVectors(currentDir, desiredDir);
+      const pitchCmd = THREE.MathUtils.clamp(rotAxis.dot(bodyRight) * 120, -0.5, 0.5);
+      const yawCmd   = THREE.MathUtils.clamp(-rotAxis.dot(bodyUp)   * 120, -0.5, 0.5);
+
+      rocketGroup._ctrlFins.forEach((fg, i) => {
+        const theta = (i / 4) * Math.PI * 2;
+        fg.rotation.x = pitchCmd * Math.cos(theta) + yawCmd * Math.sin(theta);
+      });
+    }
 
     // Flame flicker
     if (engineFlame) {
