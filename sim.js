@@ -24,6 +24,9 @@ const SIM = (() => {
   let droneSwarmCenter = new THREE.Vector3();
   let trajectoryPoints = [];
   let launchOrigin = new THREE.Vector3();
+  let launchDir = new THREE.Vector3(0, 1, 0); // world-space direction the launch tube (and loaded rocket) points
+  let droneActiveTime = 0; // accumulates only while drones aren't paused, so dive phase never jumps on resume
+  const MIN_DRONE_ALTITUDE = 60; // floor so dive manoeuvres never drop the swarm into the mountain silhouette
   let controlFinAngle = 0;
   let engineFlame, engineFlame2, engineLight;
   let rocketFired = false;
@@ -118,8 +121,9 @@ const SIM = (() => {
     buildGround();
     buildMountains();
     buildTrees();
+    buildDroneSwarm();   // must exist first so the launch pod can be oriented to face it
     buildLaunchPod();
-    buildDroneSwarm();
+    buildRocket();       // rocket is loaded in the tube and visible from the very start
 
     window.addEventListener('resize', onResize);
     window.addEventListener('orientationchange', () => setTimeout(onResize, 200));
@@ -473,132 +477,219 @@ const SIM = (() => {
   ════════════════════════════════════ */
   function buildLaunchPod() {
     launchPod = new THREE.Group();
-    launchPod.position.set(-8, 0, 8);
+    const podBasePos = new THREE.Vector3(-8, 0, 8);
+    launchPod.position.copy(podBasePos);
     scene.add(launchPod);
 
-    const metalMat = new THREE.MeshStandardMaterial({ color: 0x4a5545, roughness: 0.65, metalness: 0.55 });
-    const darkMat  = new THREE.MeshStandardMaterial({ color: 0x2a3030, roughness: 0.55, metalness: 0.7 });
-    const blackMat = new THREE.MeshStandardMaterial({ color: 0x181e1e, roughness: 0.4, metalness: 0.8 });
     const yBase = fbm(-8 * 0.04, 8 * 0.04, 5) * 3.0 - fbm(-8 * 0.1 + 5, 8 * 0.1 + 5, 3) * 0.6;
 
-    // ── Baseplate
-    const base = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.3, 0.12, 8), metalMat);
-    base.position.y = yBase + 0.06;
-    base.castShadow = true; base.receiveShadow = true;
-    launchPod.add(base);
+    // Rocket longitudinal reference points (must track buildRocket()'s geometry):
+    // nose tip ≈ +3.75, nozzle exit ≈ -5.9 (rocket-local Y, centre = 0).
+    const ROCKET_TAIL_Y = -6.05;   // just aft of the nozzle exit, with clearance
+    const ROCKET_MUZZLE_Y = -0.35; // rocket-local Y that sits level with the tube mouth
+    const TUBE_LEN = ROCKET_MUZZLE_Y - ROCKET_TAIL_Y; // enclosed tube length
+    const TUBE_OUTER_R = 0.62;
+    const TUBE_INNER_R = 0.52; // must clear the 0.45-radius rocket body
+    const ELEV_ANGLE = Math.PI / 6.5; // ~28° elevation
 
-    // ── Tripod legs (3 heavy)
-    for (let i = 0; i < 3; i++) {
-      const angle = (i / 3) * Math.PI * 2;
-      const lx = Math.cos(angle) * 1.0, lz = Math.sin(angle) * 1.0;
-      // Main leg
-      const legGeo = new THREE.CylinderGeometry(0.055, 0.075, 2.2, 8);
-      const leg = new THREE.Mesh(legGeo, metalMat);
-      leg.position.set(lx * 0.5, yBase + 1.1, lz * 0.5);
-      leg.rotation.z = Math.sin(angle) * 0.38;
-      leg.rotation.x = Math.cos(angle) * 0.38;
-      leg.castShadow = true;
-      launchPod.add(leg);
-      // Foot pad
-      const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.2, 0.06, 6), darkMat);
-      foot.position.set(lx, yBase + 0.03, lz);
-      launchPod.add(foot);
-      // Cross brace
-      const braceGeo = new THREE.CylinderGeometry(0.025, 0.025, 0.9, 6);
-      const brace = new THREE.Mesh(braceGeo, metalMat);
-      brace.position.set(lx * 0.4, yBase + 0.7, lz * 0.4);
-      brace.rotation.z = Math.sin(angle + Math.PI / 6) * 0.6;
-      brace.rotation.x = Math.cos(angle + Math.PI / 6) * 0.6;
-      launchPod.add(brace);
-    }
+    // ── Materials
+    const hullMat   = new THREE.MeshStandardMaterial({ color: 0x4d5a48, roughness: 0.6, metalness: 0.55 });
+    const armorMat  = new THREE.MeshStandardMaterial({ color: 0x3c4438, roughness: 0.75, metalness: 0.4 });
+    const darkMat   = new THREE.MeshStandardMaterial({ color: 0x272e2b, roughness: 0.55, metalness: 0.7 });
+    const blackMat  = new THREE.MeshStandardMaterial({ color: 0x14181a, roughness: 0.35, metalness: 0.85 });
+    const hazardMat = new THREE.MeshStandardMaterial({ color: 0xc7a423, roughness: 0.55, metalness: 0.25 });
+    const glassMat  = new THREE.MeshStandardMaterial({ color: 0x0e2530, roughness: 0.1, metalness: 0.9 });
+    const boreMat   = new THREE.MeshStandardMaterial({ color: 0x05070a, roughness: 0.3, metalness: 0.9, side: THREE.BackSide });
 
-    // ── Central mast
-    const mast = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 2.6, 10), metalMat);
-    mast.position.y = yBase + 1.3;
-    mast.castShadow = true;
-    launchPod.add(mast);
+    /* ── Stabilized ground chassis ── */
+    const chassis = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.5, 2.4), hullMat);
+    chassis.position.y = yBase + 0.25;
+    chassis.castShadow = true; chassis.receiveShadow = true;
+    launchPod.add(chassis);
 
-    // ── Elevation pivot housing
-    const pivot = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.35, 0.55), darkMat);
-    pivot.position.y = yBase + 2.65;
-    pivot.castShadow = true;
-    launchPod.add(pivot);
+    const skirt = new THREE.Mesh(new THREE.BoxGeometry(3.55, 0.14, 2.55), darkMat);
+    skirt.position.y = yBase + 0.57;
+    launchPod.add(skirt);
 
-    // ── Launch tube cluster (4 tubes like a real MANPAD quad-pack)
-    const tubeGroup = new THREE.Group();
-    tubeGroup.position.set(0, yBase + 2.65, 0);
-    const elevAngle = Math.PI / 5.5; // ~33° elevation
-    tubeGroup.rotation.z = elevAngle;
+    // Corner hydraulic outrigger jacks (levelling legs)
+    [[1.5, 1.05], [1.5, -1.05], [-1.5, 1.05], [-1.5, -1.05]].forEach(([lx, lz]) => {
+      const jack = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.85, 8), darkMat);
+      jack.position.set(lx, yBase - 0.17, lz);
+      jack.castShadow = true;
+      launchPod.add(jack);
+      const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.07, 8), blackMat);
+      pad.position.set(lx, yBase - 0.6, lz);
+      launchPod.add(pad);
+    });
 
-    const tubeOffsets = [[-0.14, 0.14], [0.14, 0.14], [-0.14, -0.14], [0.14, -0.14]];
-    tubeOffsets.forEach(([ty, tz]) => {
-      // Outer tube
+    /* ── Slew bearing (rotating ring the turret sits on) ── */
+    const slewRing = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.2, 0.14, 28), darkMat);
+    slewRing.position.y = yBase + 0.71;
+    slewRing.castShadow = true;
+    launchPod.add(slewRing);
+
+    /* ── Turret yaw group — everything below traverses to face the target ── */
+    const turretYaw = new THREE.Group();
+    turretYaw.position.set(0, yBase + 0.78, 0);
+    launchPod.add(turretYaw);
+
+    const turretBody = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.8, 1.6), hullMat);
+    turretBody.position.set(0, 0.4, -0.1);
+    turretBody.castShadow = true; turretBody.receiveShadow = true;
+    turretYaw.add(turretBody);
+
+    // Sloped glacis front plate, angled toward the direction of fire (+Z)
+    const glacis = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.6, 0.5), armorMat);
+    glacis.position.set(0, 0.5, 0.72);
+    glacis.rotation.x = -0.4;
+    glacis.castShadow = true;
+    turretYaw.add(glacis);
+
+    // Hazard stripe band + hatch detail
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.09, 1.62), hazardMat);
+    stripe.position.set(0, 0.12, -0.1);
+    turretYaw.add(stripe);
+    const hatch = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.06, 16), darkMat);
+    hatch.position.set(-0.3, 0.82, -0.4);
+    turretYaw.add(hatch);
+
+    // Optical/EO sighting turret on the roof
+    const eoBall = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 12), glassMat);
+    eoBall.position.set(0.55, 0.85, 0.25);
+    turretYaw.add(eoBall);
+
+    // Trunnion bearings either side of the elevation cradle
+    [-0.85, 0.85].forEach((tx) => {
+      const trun = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.28, 12), darkMat);
+      trun.rotation.z = Math.PI / 2;
+      trun.position.set(tx, 0.82, 0.55);
+      trun.castShadow = true;
+      turretYaw.add(trun);
+    });
+
+    /* ── Elevation cradle group — pitches up to the firing angle ── */
+    const elevGroup = new THREE.Group();
+    elevGroup.position.set(0, 0.82, 0.55);
+    elevGroup.rotation.x = -ELEV_ANGLE;
+    turretYaw.add(elevGroup);
+
+    // Cradle side rails running the length of the tubes
+    [-0.62, 0.62].forEach((cx) => {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.22, TUBE_LEN + 0.5), darkMat);
+      rail.position.set(cx, -0.05, TUBE_LEN / 2);
+      rail.castShadow = true;
+      elevGroup.add(rail);
+    });
+
+    // ── Launch tubes — two side-by-side canisters, large enough to fully
+    // shroud the rocket body (only the nose section shows at the mouth).
+    // Tube 0 (right) is the live/loaded tube; tube 1 (left) is a spare.
+    const tubeXOffsets = [0.34, -0.34];
+    tubeXOffsets.forEach((tx, idx) => {
       const outerTube = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.11, 0.11, 2.4, 12, 1, false),
-        blackMat
+        new THREE.CylinderGeometry(TUBE_OUTER_R, TUBE_OUTER_R * 1.04, TUBE_LEN, 24, 1, false),
+        hullMat
       );
-      // Inner bore
-      const innerBore = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.095, 0.095, 2.4, 12, 1, true),
-        new THREE.MeshStandardMaterial({ color: 0x080e0e, roughness: 0.3, metalness: 0.9, side: THREE.BackSide })
-      );
-      outerTube.add(innerBore);
-      outerTube.position.set(0, 0, 0);
-      // Orient tubes along X axis (horizontal in tube-group local space)
-      outerTube.rotation.z = Math.PI / 2;
-      outerTube.position.set(0.6, ty, tz);
+      outerTube.rotation.x = Math.PI / 2;
+      outerTube.position.set(tx, 0, TUBE_LEN / 2);
       outerTube.castShadow = true;
-      tubeGroup.add(outerTube);
+      elevGroup.add(outerTube);
 
-      // Tube bands / reinforcements
-      for (let b = 0; b < 3; b++) {
-        const band = new THREE.Mesh(new THREE.TorusGeometry(0.115, 0.015, 6, 12), metalMat);
-        band.position.set(-0.6 + b * 0.6, ty, tz);
-        band.rotation.y = Math.PI / 2;
-        tubeGroup.add(band);
+      // Dark interior bore so the open mouth reads as hollow, not solid
+      const bore = new THREE.Mesh(
+        new THREE.CylinderGeometry(TUBE_INNER_R, TUBE_INNER_R, TUBE_LEN - 0.06, 20, 1, true),
+        boreMat
+      );
+      bore.rotation.x = Math.PI / 2;
+      bore.position.set(tx, 0, TUBE_LEN / 2);
+      elevGroup.add(bore);
+
+      // Muzzle rim + breach cap
+      const muzzleRim = new THREE.Mesh(new THREE.TorusGeometry(TUBE_OUTER_R * 0.94, 0.045, 8, 28), darkMat);
+      muzzleRim.position.set(tx, 0, TUBE_LEN);
+      elevGroup.add(muzzleRim);
+      const breachCap = new THREE.Mesh(new THREE.CylinderGeometry(TUBE_OUTER_R * 0.92, TUBE_OUTER_R * 0.92, 0.1, 20), darkMat);
+      breachCap.rotation.x = Math.PI / 2;
+      breachCap.position.set(tx, 0, 0.02);
+      elevGroup.add(breachCap);
+
+      // Reinforcement bands along the tube
+      for (let b = 0; b < 4; b++) {
+        const band = new THREE.Mesh(new THREE.TorusGeometry(TUBE_OUTER_R * 1.02, 0.032, 8, 24), darkMat);
+        band.position.set(tx, 0, 0.35 + b * (TUBE_LEN - 0.7) / 3);
+        elevGroup.add(band);
+      }
+
+      // Stencilled hazard tip ring near the mouth
+      const tipRing = new THREE.Mesh(new THREE.TorusGeometry(TUBE_OUTER_R * 1.0, 0.05, 6, 24), hazardMat);
+      tipRing.position.set(tx, 0, TUBE_LEN - 0.35);
+      elevGroup.add(tipRing);
+
+      // The right-hand tube (idx 0) is the live tube: remember an invisible
+      // breach-reference point so we can derive the loaded rocket's world
+      // position/orientation once the whole hierarchy's matrices are current.
+      if (idx === 0) {
+        const breachPoint = new THREE.Object3D();
+        breachPoint.position.set(tx, 0, 0);
+        elevGroup.add(breachPoint);
+        elevGroup.userData.breachPoint = breachPoint;
       }
     });
 
-    // Tube support rail
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.04, 0.38), metalMat);
-    rail.position.set(0.6, 0, 0);
-    tubeGroup.add(rail);
+    // Cross-brace between the two tubes
+    for (let b = 0; b < 3; b++) {
+      const brace = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.05, 0.09), darkMat);
+      brace.position.set(0, 0, 0.4 + b * (TUBE_LEN - 0.8) / 2);
+      elevGroup.add(brace);
+    }
 
-    launchPod.add(tubeGroup);
+    // Elevation actuator ram (visual detail, connects cradle to turret body)
+    const ram = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.0, 8), darkMat);
+    ram.position.set(0, -0.55, 0.05);
+    ram.rotation.x = -ELEV_ANGLE * 0.6;
+    turretYaw.add(ram);
 
-    // ── Radar / sensor mast (separate boom)
+    /* ── Fire-control radar mast, mounted on the turret so it slews with it ── */
     const radarBoom = new THREE.Group();
-    radarBoom.position.set(0.6, yBase + 2.8, 0);
-
-    const boomPole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.03, 0.9, 8), metalMat);
-    boomPole.position.y = 0.45;
+    radarBoom.position.set(-0.85, 0.4, -0.55);
+    const boomPole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 1.1, 8), hullMat);
+    boomPole.position.y = 0.55;
+    boomPole.castShadow = true;
     radarBoom.add(boomPole);
 
-    // Radar dish - parabolic look
-    const dishGeo = new THREE.SphereGeometry(0.38, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55);
+    const dishGeo = new THREE.SphereGeometry(0.4, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.55);
     const dishMat = new THREE.MeshStandardMaterial({ color: 0x6a7a70, roughness: 0.4, metalness: 0.7, side: THREE.DoubleSide });
     radarDish = new THREE.Mesh(dishGeo, dishMat);
-    radarDish.position.y = 0.95;
+    radarDish.position.y = 1.15;
     radarDish.rotation.x = -Math.PI * 0.45;
     radarBoom.add(radarDish);
 
-    // Feed horn
-    const feedHorn = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.04, 0.2, 8), blackMat);
-    feedHorn.position.set(0, 0.75, 0.25);
+    const feedHorn = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.04, 0.22, 8), blackMat);
+    feedHorn.position.set(0, 0.92, 0.28);
     feedHorn.rotation.x = 0.4;
     radarBoom.add(feedHorn);
 
-    launchPod.add(radarBoom);
+    turretYaw.add(radarBoom);
 
-    // Compute launch origin - tip of tube cluster in world space
-    // Tube group centre at yBase+2.65, rotated, tubes extend +X by 0.6+1.2 = 1.2 from centre
-    const podWorldPos = new THREE.Vector3(-8, 0, 8);
-    const tubeLen = 1.2;
-    launchOrigin.set(
-      podWorldPos.x + Math.cos(elevAngle) * tubeLen,
-      yBase + 2.65 + Math.sin(elevAngle) * tubeLen,
-      podWorldPos.z
-    );
+    /* ── Traverse the turret to face the drone swarm ── */
+    const toSwarmFlat = new THREE.Vector3(droneSwarmCenter.x - podBasePos.x, 0, droneSwarmCenter.z - podBasePos.z);
+    const yaw = toSwarmFlat.lengthSq() > 1e-6 ? Math.atan2(toSwarmFlat.x, toSwarmFlat.z) : 0;
+    turretYaw.rotation.y = yaw;
+
+    launchDir.set(
+      Math.sin(yaw) * Math.cos(ELEV_ANGLE),
+      Math.sin(ELEV_ANGLE),
+      Math.cos(yaw) * Math.cos(ELEV_ANGLE)
+    ).normalize();
+
+    // Resolve the live tube's breach position in world space now that the
+    // turret's yaw/elevation transforms are set, then place the loaded
+    // rocket's centre forward of the breach by exactly the tail offset —
+    // this is also where the rocket starts its flight when fired.
+    launchPod.updateMatrixWorld(true);
+    const breachWorld = new THREE.Vector3();
+    elevGroup.userData.breachPoint.getWorldPosition(breachWorld);
+    launchOrigin.copy(breachWorld).addScaledVector(launchDir, -ROCKET_TAIL_Y);
   }
 
   /* ════════════════════════════════════
@@ -758,30 +849,35 @@ const SIM = (() => {
     rocketPos.copy(launchOrigin);
     rocketGroup.position.copy(rocketPos);
 
-    // ── Pre-align toward the target instantly upon creation so it never flashes vertically
-    if (typeof droneSwarmCenter !== 'undefined' && launchOrigin) {
-      const toSwarm = droneSwarmCenter.clone().sub(launchOrigin).normalize();
-      const launchDir = new THREE.Vector3(toSwarm.x, 0.55, toSwarm.z).normalize();
-      const initialQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), launchDir);
-      rocketGroup.quaternion.copy(initialQuat);
-    }
+    // Align the rocket with the launch tube's bore so it sits correctly
+    // loaded inside it (nose poking out the mouth) from the moment it's built.
+    const initialQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), launchDir);
+    rocketGroup.quaternion.copy(initialQuat);
 
     scene.add(rocketGroup);
-    rocketGroup.visible = false;
+    rocketGroup.visible = true; // loaded and visible in the tube even before firing
 
     return ctrlFinGroups;
   }
 
 
     function makeFixedFin(mat) {
+    // Clipped delta: a straight, swept leading edge and a straight, forward-
+    // raked trailing edge that both terminate at a short tip chord (the tip
+    // is "clipped" flat rather than coming to a point like a full delta).
+    //   x = span outward from the body surface, y = position along the rocket axis.
+    const ROOT_LE_Y = 0.78;   // root leading edge (forward-most, at the body)
+    const ROOT_TE_Y = -0.62;  // root trailing edge (aft-most, at the body)  -> root chord 1.40
+    const TIP_LE_Y  = 0.18;   // tip leading edge (swept aft from the root)
+    const TIP_TE_Y  = -0.22;  // tip trailing edge (swept forward from the root) -> tip chord 0.40
+    const SPAN      = 1.0;    // outer tip span (100mm), matches the original silhouette size
+
     const shape = new THREE.Shape();
-    shape.moveTo(0,    0);      
-    shape.lineTo(0,    0.65);   
-    shape.lineTo(0.6,  0.5);    // Adjusted for 1.0 unit maximum tip span
-    shape.lineTo(1.0, -0.1);    // <-- EXACTLY 1.0 units (100mm) outer tip span
-    shape.lineTo(0.7,  -0.55);  // Adjusted to match new taper profile
-    shape.lineTo(0,    -0.55);  
-    shape.lineTo(0,    0);
+    shape.moveTo(0,    ROOT_LE_Y);
+    shape.lineTo(SPAN, TIP_LE_Y);   // swept leading edge
+    shape.lineTo(SPAN, TIP_TE_Y);   // clipped tip chord
+    shape.lineTo(0,    ROOT_TE_Y);  // swept trailing edge
+    shape.lineTo(0,    ROOT_LE_Y);  // root chord, closing the shape
     const ext = { depth: 0.07, bevelEnabled: true, bevelSize: 0.014, bevelThickness: 0.014, bevelSegments: 2 };
     const geo = new THREE.ExtrudeGeometry(shape, ext);
     const fin = new THREE.Mesh(geo, mat);
@@ -835,11 +931,20 @@ const SIM = (() => {
       const drone = buildDetailedDrone();
       drone.position.set(swarmCenter.x + dx, swarmCenter.y + dy, swarmCenter.z + dz);
       drone._basePos = drone.position.clone();
+      // Slow centre-of-formation drift (unrelated to the dive manoeuvre below).
+      drone._dynamicBase = drone.position.clone();
       drone._vel = new THREE.Vector3(
         (Math.random() - 0.5) * 0.02,
         (Math.random() - 0.5) * 0.01,
         (Math.random() - 0.5) * 0.02
       );
+      // Per-drone diving-manoeuvre parameters: each drone swoops up and down
+      // and side to side on its own cycle so the swarm reads as alive and
+      // evasive rather than gliding in a flat straight line.
+      drone._diveSeed = Math.random() * 1000;
+      drone._divePeriod = 5 + Math.random() * 4;      // seconds per dive cycle
+      drone._diveAmp = 6 + Math.random() * 9;          // vertical swoop range (units)
+      drone._lateralAmp = 2 + Math.random() * 4;       // side-to-side swoop range (units)
       drone._alive = true;
       drone._fallVel = 0;
       scene.add(drone);
@@ -1095,6 +1200,12 @@ const SIM = (() => {
   }
 
   function updateDrones(dt) {
+    // Drones hold position (frozen mid-manoeuvre) whenever the missile is
+    // paused between flight stages -- the whole engagement is on hold, not
+    // just the interceptor.
+    const paused = rocketPaused && simState === 'flight';
+    if (!paused) droneActiveTime += dt;
+
     drones.forEach((drone, i) => {
       if (!drone._alive) {
         drone._fallVel += dt * 9.8 * 0.8;
@@ -1107,7 +1218,7 @@ const SIM = (() => {
       }
 
       if (simState === 'approach') {
-        const towardPod = new THREE.Vector3(-8, 0, 8).sub(drone.position);
+        const towardPod = new THREE.Vector3(-8, 0, 8).sub(drone._dynamicBase);
         const dist2 = towardPod.length();
         if (dist2 > 5) {
           towardPod.normalize().multiplyScalar(0.008);
@@ -1116,25 +1227,46 @@ const SIM = (() => {
         }
       }
 
-      drone.position.addScaledVector(drone._vel, 1);
-      drone.position.y = drone._basePos.y + Math.sin(missionTime * 1.1 + i * 0.7) * 0.2;
-      drone.rotation.y += dt * 0.4;
+      if (paused) return; // hold exactly where it was when the pause hit
+
+      // Slow drift of the manoeuvre's "centre" (formation advance / approach).
+      drone._dynamicBase.addScaledVector(drone._vel, 1);
+
+      // Realistic diving manoeuvre: a layered sine wave (fundamental + a
+      // faster harmonic) gives an organic swoop-dive-recover pattern rather
+      // than a flat sinusoid, banked into the vertical motion like a real
+      // aircraft/drone would roll and pitch through a dive.
+      const phase = (droneActiveTime + drone._diveSeed) / drone._divePeriod * Math.PI * 2;
+      const diveWave = Math.sin(phase) * 0.65 + Math.sin(phase * 2.2 + 1.3) * 0.35;
+      const desiredY = drone._dynamicBase.y + diveWave * drone._diveAmp;
+      // Floor keeps the swarm from ever diving low enough to disappear
+      // against the mountain silhouette behind it.
+      drone.position.y = Math.max(desiredY, MIN_DRONE_ALTITUDE);
+
+      const lateralPhase = phase * 0.6 + drone._diveSeed * 1.7;
+      drone.position.x = drone._dynamicBase.x + Math.sin(lateralPhase) * drone._lateralAmp;
+      drone.position.z = drone._dynamicBase.z + Math.cos(lateralPhase * 0.8) * drone._lateralAmp;
+
+      // Bank/pitch into the dive based on instantaneous vertical rate.
+      const angFreq = Math.PI * 2 / drone._divePeriod;
+      const vertRate = Math.cos(phase) * 0.65 * angFreq + Math.cos(phase * 2.2 + 1.3) * 0.35 * angFreq * 2.2;
+      drone.rotation.z = THREE.MathUtils.clamp(-vertRate * drone._diveAmp * 0.06, -0.55, 0.55);
+      drone.rotation.x = THREE.MathUtils.clamp(vertRate * drone._diveAmp * 0.04, -0.35, 0.35);
+      drone.rotation.y += dt * 0.5;
     });
 
     // Keep the guidance/interception target locked to where the swarm
-    // ACTUALLY is right now, not a stale snapshot from spawn time. Drones
-    // keep drifting for as long as the mission runs (the pod-attraction
-    // velocity picked up during "approach" never resets), and flights are
-    // now long enough -- especially with staged pauses -- for that drift
-    // to add up to many units. Re-centering every frame is what makes the
-    // missile actually chase the live swarm instead of flying toward
-    // wherever it used to be.
+    // ACTUALLY is right now, not a stale snapshot from spawn time. We track
+    // the smooth per-drone "_dynamicBase" (the manoeuvre centre) rather than
+    // each drone's instantaneous, swooping position, so the missile guides
+    // toward the swarm's real formation centre instead of jittering after
+    // every individual dive.
     if (drones.length > 0) {
       let cx = 0, cy = 0, cz = 0, count = 0;
       for (let i = 0; i < drones.length; i++) {
         const d = drones[i];
         if (d._alive === false) continue;
-        cx += d.position.x; cy += d.position.y; cz += d.position.z;
+        cx += d._dynamicBase.x; cy += d._dynamicBase.y; cz += d._dynamicBase.z;
         count++;
       }
       if (count > 0) droneSwarmCenter.set(cx / count, cy / count, cz / count);
@@ -1403,9 +1535,13 @@ const SIM = (() => {
       function launchRocket(mode) {
     killMode = mode;
     simState = 'launch';
-    
-    buildRocket(); // This now automatically sets the tilted orientation inside it
-    
+
+    // The rocket is already built and sitting loaded in the tube (see init()
+    // / resetSim()) -- reuse that same object instead of rebuilding it, so
+    // firing never causes it to pop into existence; it just starts moving
+    // from right where it was already resting.
+    if (!rocketGroup) buildRocket();
+
     rocketGroup.visible = true;
     rocketFired = false;
     rocketPaused = false;
@@ -1414,6 +1550,7 @@ const SIM = (() => {
     nextCheckpointIdx = 0;
     rocketPos.copy(launchOrigin);
     rocketGroup.position.copy(rocketPos);
+    rocketGroup.quaternion.copy(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), launchDir));
 
     cameraMode = 'launch';
 
@@ -1423,10 +1560,6 @@ const SIM = (() => {
       if (flameOuter) flameOuter.visible = true;
       if (engineLight) { engineLight.visible = true; }
 
-      // Get the correct heading vector to compute immediate physics velocity
-      const toSwarm = droneSwarmCenter.clone().sub(launchOrigin).normalize();
-      const launchDir = new THREE.Vector3(toSwarm.x, 0.55, toSwarm.z).normalize();
-      
       rocketVel.copy(launchDir).multiplyScalar(6);
       rocketFired = true;
       simState = 'flight';
@@ -1474,8 +1607,10 @@ const SIM = (() => {
     controlFinAngle = 0;
     cameraMode = 'orbit';
     cameraTimer = 0;
+    droneActiveTime = 0;
 
     buildDroneSwarm();
+    buildRocket(); // reload a fresh rocket into the tube for the next run
   }
 
   function onAlert(cb) { onAlertCb = cb; }
