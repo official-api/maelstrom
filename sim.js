@@ -37,7 +37,6 @@ const SIM = (() => {
   // Right-hand perpendicular of _swarmFwd in XZ plane (rotate +90 deg around Y)
   const _swarmRight = new THREE.Vector3(_swarmFwd.z, 0, -_swarmFwd.x);
   const DRONE_START_ALT = 78;   // fixed altitude — swarm flies flat
-  let controlFinAngle = 0;
   let engineFlame, engineFlame2, engineLight;
   let rocketFired = false;
   let interceptDone = false;
@@ -52,7 +51,6 @@ const SIM = (() => {
   let distanceTraveled = 0;
   let nextCheckpointIdx = 0;
   let onStageCb = null;
-  let finRotDir = 1;
   let radarScanAngle = 0;
   let cameraTimer = 0;
   let sunLight;
@@ -1095,7 +1093,7 @@ const SIM = (() => {
       }
     }
 
-    const ADVANCE_SPEED = 6; // units per second
+    const ADVANCE_SPEED = 1; // units per second
 
     drones.forEach((drone, i) => {
       if (!drone._alive) {
@@ -1216,17 +1214,46 @@ const SIM = (() => {
 
     // Orient rocket along velocity
     const dir = rocketVel.clone().normalize();
-    const quat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-    rocketGroup.quaternion.slerp(quat, Math.min(dt * 12, 1));
+    const targetQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+    rocketGroup.quaternion.slerp(targetQuat, Math.min(dt * 12, 1));
 
-    // Control fin deflection - hinge is along the span (local Z of the group after rotation.x = -PI/2)
-    // Deflecting the child fin mesh around its local Z gives a realistic pitch/yaw deflection
-    controlFinAngle += dt * finRotDir * 2.2;
-    if (Math.abs(controlFinAngle) > 0.35) finRotDir *= -1;
+    // ── Realistic control-fin deflection ────────────────────────────────────
+    // Decompose the guidance error into the rocket's local pitch and yaw axes,
+    // then deflect each fin by the component of that error it can correct.
+    //
+    // Each cfGrp is orbited at angle theta around the rocket (body) Y-axis:
+    //   fin 0 = 0 deg  (e.g. "top"    in body frame)
+    //   fin 1 = 90 deg ("right")
+    //   fin 2 = 180 deg ("bottom")
+    //   fin 3 = 270 deg ("left")
+    //
+    // The fin's hinge is spanwise (local X of the group after orbital rotation).
+    // Rotating the fin mesh around its local X deflects it to generate a side
+    // force in the plane perpendicular to that fin's span.
+    //
+    // For a desired turn direction expressed as (pitchErr, yawErr) in rocket-
+    // local space, the correct deflection for fin i is:
+    //   delta_i = pitchErr * cos(theta_i) + yawErr * sin(theta_i)
+    // — exactly the projection of the commanded moment onto each fin's axis.
     if (rocketGroup._ctrlFins) {
+      // Error vector: desired direction minus current direction, in world space
+      const errWorld = newDir.clone().sub(currentDir);
+
+      // Express the error in rocket-local space so we get body-frame pitch/yaw
+      const invQuat = rocketGroup.quaternion.clone().invert();
+      const errLocal = errWorld.clone().applyQuaternion(invQuat);
+
+      // In rocket-local space the body axis is Y, so:
+      //   errLocal.x = yaw  error (left/right)
+      //   errLocal.z = pitch error (up/down)  (Z is "forward" in local after Y-up alignment)
+      const pitchCmd = THREE.MathUtils.clamp(-errLocal.z * 6, -0.5, 0.5);
+      const yawCmd   = THREE.MathUtils.clamp( errLocal.x * 6, -0.5, 0.5);
+
       rocketGroup._ctrlFins.forEach((fg, i) => {
-        // Alternate fins deflect in opposite directions for roll-neutral pitch+yaw
-        fg.children[0].rotation.z = controlFinAngle * (i % 2 === 0 ? 1 : -1) * 0.45;
+        const theta = (i / 4) * Math.PI * 2; // orbital angle of this fin group
+        const deflection = pitchCmd * Math.cos(theta) + yawCmd * Math.sin(theta);
+        // Rotate the fin mesh around its local X axis (spanwise hinge)
+        fg.children[0].rotation.x = deflection;
       });
     }
 
@@ -1470,7 +1497,6 @@ const SIM = (() => {
     trajectoryPoints = [];
     rocketPos.set(0, 0, 0);
     rocketVel.set(0, 0, 0);
-    controlFinAngle = 0;
     cameraMode = 'orbit';
     cameraTimer = 0;
     dronePhase = 0;
