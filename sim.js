@@ -1010,6 +1010,25 @@ const SIM = (() => {
       drone.position.y = drone._basePos.y + Math.sin(missionTime * 1.1 + i * 0.7) * 0.2;
       drone.rotation.y += dt * 0.4;
     });
+
+    // Keep the guidance/interception target locked to where the swarm
+    // ACTUALLY is right now, not a stale snapshot from spawn time. Drones
+    // keep drifting for as long as the mission runs (the pod-attraction
+    // velocity picked up during "approach" never resets), and flights are
+    // now long enough -- especially with staged pauses -- for that drift
+    // to add up to many units. Re-centering every frame is what makes the
+    // missile actually chase the live swarm instead of flying toward
+    // wherever it used to be.
+    if (drones.length > 0) {
+      let cx = 0, cy = 0, cz = 0, count = 0;
+      for (let i = 0; i < drones.length; i++) {
+        const d = drones[i];
+        if (d._alive === false) continue;
+        cx += d.position.x; cy += d.position.y; cz += d.position.z;
+        count++;
+      }
+      if (count > 0) droneSwarmCenter.set(cx / count, cy / count, cz / count);
+    }
   }
 
   function idleMotorEffects() {
