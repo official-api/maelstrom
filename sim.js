@@ -1081,7 +1081,7 @@ const SIM = (() => {
   function updateDrones(dt) {
     // Freeze the whole engagement while the missile is between staged pauses.
     const paused = rocketPaused && simState === 'flight';
-    if (!paused) droneActiveTime += dt;
+    if (!paused && rocketFired) droneActiveTime += dt;
 
     // Swarm manoeuvre: forward -> strafe right -> forward again, flat altitude throughout.
     // Phase 0 FORWARD : fly straight in _swarmFwd direction
@@ -1095,7 +1095,7 @@ const SIM = (() => {
       }
     }
 
-    const ADVANCE_SPEED = 1; // units per second, consistent across all phases
+    const ADVANCE_SPEED = 0.15; // units per second, consistent across all phases
 
     drones.forEach((drone, i) => {
       if (!drone._alive) {
