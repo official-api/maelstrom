@@ -88,9 +88,12 @@ const SIM = (() => {
     renderer.physicallyCorrectLights = true;
 
     scene = new THREE.Scene();
-    // Warm, dusty atmospheric haze — matches the sandy/mineral-mountain backdrop
-    // instead of the old cool-grey fog, so distant terrain fades believably.
-    scene.fog = new THREE.FogExp2(0xcdbd9c, 0.0021);
+    // Warm, dusty atmospheric haze that matches the desert HDRI's horizon tone.
+    // With no mountain ring to hide the ground plane's far edge, this fog is
+    // tuned to fully dissolve the ground into that colour well before the
+    // edge comes into view, so it reads as one continuous environment rather
+    // than a flat disc dropped onto a photo backdrop.
+    scene.fog = new THREE.FogExp2(0xcdbd9c, 0.0055);
 
     clock = new THREE.Clock();
 
@@ -98,11 +101,11 @@ const SIM = (() => {
     camera.position.set(-14, 7, 20);
     camera.lookAt(0, 2, 0);
 
-    // All external texture/HDRI loads (sky, ground, mountains) go through
-    // three.js's shared DefaultLoadingManager, so we can report combined
-    // progress and a single "everything's ready" moment back to the UI for
-    // the loading screen — this must be wired up BEFORE buildSky/buildGround/
-    // buildMountains kick off their loads below.
+    // All external texture/HDRI loads (sky, ground) go through three.js's
+    // shared DefaultLoadingManager, so we can report combined progress and a
+    // single "everything's ready" moment back to the UI for the loading
+    // screen — this must be wired up BEFORE buildSky/buildGround kick off
+    // their loads below.
     THREE.DefaultLoadingManager.onProgress = (url, itemsLoaded, itemsTotal) => {
       if (onLoadProgressCb) onLoadProgressCb(itemsLoaded, itemsTotal);
     };
@@ -116,7 +119,6 @@ const SIM = (() => {
     buildLighting();
     buildSky();
     buildGround();
-    buildMountains();
     buildTrees();
     buildLaunchPod();
     buildDroneSwarm();
@@ -251,7 +253,6 @@ const SIM = (() => {
   // Real, photographed CC0 PBR texture sets (Poly Haven) used to skin the
   // terrain instead of flat native-three.js vertex colours.
   const GROUND_TEX_BASE = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/sandy_gravel_02/sandy_gravel_02_';
-  const ROCK_TEX_BASE    = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/rock_face_03/rock_face_03_';
 
   function loadRepeatingTexture(loader, url, repeatX, repeatY, isColorMap) {
     const tex = loader.load(url, undefined, undefined, () => {
@@ -268,10 +269,10 @@ const SIM = (() => {
   function buildGround() {
     const loader = new THREE.TextureLoader();
     loader.crossOrigin = 'anonymous';
-    // Ground must extend at least as far as the mountain ring's base radius
-    // (see buildMountains) in every direction, or the horizon shows a gap of
-    // empty space between the flat plane and the surrounding peaks.
-    const GROUND_SIZE = 700; // half-width 350, comfortably beyond MOUNTAIN_RADIUS (300)
+    // Large enough that its far edge sits well past the point where the fog
+    // (see scene.fog above) has fully dissolved it into the HDRI's horizon
+    // colour — the plane's boundary should never actually be visible.
+    const GROUND_SIZE = 700; // half-width 350
     const REPEAT = 30 * (GROUND_SIZE / 400); // keep texel density constant vs. the old 400-unit plane
 
     const diffuseMap  = loadRepeatingTexture(loader, GROUND_TEX_BASE + 'diff_2k.jpg', REPEAT, REPEAT, true);
@@ -322,51 +323,6 @@ const SIM = (() => {
       pg.position.set(px, 0.02, pz);
       scene.add(pg);
     });
-  }
-
-  /* ════════════════════════════════════
-     DISTANT MOUNTAINS - real rock-face PBR
-     texture wrapped around the horizon, giving
-     the "entire background" a proper landform
-     instead of just sky meeting a flat plane.
-  ════════════════════════════════════ */
-  function buildMountains() {
-    const loader = new THREE.TextureLoader();
-    loader.crossOrigin = 'anonymous';
-
-    const diffuseMap = loadRepeatingTexture(loader, ROCK_TEX_BASE + 'diff_2k.jpg', 18, 3, true);
-    const normalMap  = loadRepeatingTexture(loader, ROCK_TEX_BASE + 'nor_gl_2k.jpg', 18, 3, false);
-    const roughMap   = loadRepeatingTexture(loader, ROCK_TEX_BASE + 'rough_2k.jpg', 18, 3, false);
-
-    // Must stay comfortably inside the ground plane's half-width (350, see
-    // buildGround) so the mountain ring's base is always covered by textured
-    // ground and never leaves a visible gap of empty space at the horizon.
-    const MOUNTAIN_RADIUS = 300;
-    const height = 95;
-    const geo = new THREE.CylinderGeometry(MOUNTAIN_RADIUS, MOUNTAIN_RADIUS * 1.04, height, 128, 10, true);
-    const pos = geo.attributes.position;
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-      const angle = Math.atan2(z, x);
-      const ridge = fbm(Math.cos(angle) * 3 + 40, Math.sin(angle) * 3 + 40, 5);
-      const heightRatio = (y + height / 2) / height; // 0 bottom -> 1 top
-      const profile = 0.22 + Math.pow(ridge, 1.3) * 0.85; // per-angle silhouette height
-      pos.setY(i, -height / 2 + heightRatio * height * profile);
-    }
-    geo.computeVertexNormals();
-
-    const mat = new THREE.MeshStandardMaterial({
-      map: diffuseMap,
-      normalMap: normalMap,
-      roughnessMap: roughMap,
-      roughness: 1.0,
-      metalness: 0.0,
-      side: THREE.DoubleSide,
-      fog: true,
-    });
-    const mountains = new THREE.Mesh(geo, mat);
-    mountains.position.y = height / 2 - 3;
-    scene.add(mountains);
   }
 
   /* ════════════════════════════════════
@@ -813,9 +769,8 @@ const SIM = (() => {
     // Placed a long way out (~210 units) so the missile's flight has plenty
     // of runway for the engine / aerofoil / tracking stages to each get
     // real screen time before final approach.
-    // Altitude raised well above the mountain ridge-line (~45-60 units at
-    // this bearing) so the swarm silhouettes cleanly against open sky
-    // instead of camouflaging against the rock backdrop.
+    // Altitude raised well above ground level so the swarm silhouettes
+    // cleanly against open sky instead of camouflaging against the ground.
     const swarmCenter = new THREE.Vector3(150, 78, -130);
     droneSwarmCenter.copy(swarmCenter);
 
