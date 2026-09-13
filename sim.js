@@ -1095,7 +1095,7 @@ const SIM = (() => {
       }
     }
 
-    const ADVANCE_SPEED = 0.15; // units per second, consistent across all phases
+    const ADVANCE_SPEED = 15; // units per second, consistent across all phases
 
     drones.forEach((drone, i) => {
       if (!drone._alive) {
