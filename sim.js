@@ -650,20 +650,14 @@ const SIM = (() => {
     return ctrlFinGroups;
   }
 
-  function makeFixedFin(mat) {
-    // Clipped delta fin.
-    // ExtrudeGeometry puts the shape in the XY plane and extrudes along +Z (thickness).
-    // The parent fxGrp has rotation.y = orbitalAngle, which spins the group around the
-    // rocket's Y axis. The fin's root is at the group origin; span goes in +X (radially
-    // outward from the rocket), height in +Y (along the rocket body), Z = thickness.
-    // No rotation needed on the mesh itself - the group's rotation.y handles everything.
+    function makeFixedFin(mat) {
     const shape = new THREE.Shape();
-    shape.moveTo(0,    0);      // root aft corner
-    shape.lineTo(0,    0.65);   // root forward corner
-    shape.lineTo(1.1,  0.5);    // leading-edge tip (clipped delta)
-    shape.lineTo(1.75, -0.1);   // outer trailing tip
-    shape.lineTo(1.2,  -0.55);  // trailing-edge cut
-    shape.lineTo(0,    -0.55);  // aft root
+    shape.moveTo(0,    0);      
+    shape.lineTo(0,    0.65);   
+    shape.lineTo(0.6,  0.5);    // Adjusted for 1.0 unit maximum tip span
+    shape.lineTo(1.0, -0.1);    // <-- EXACTLY 1.0 units (100mm) outer tip span
+    shape.lineTo(0.7,  -0.55);  // Adjusted to match new taper profile
+    shape.lineTo(0,    -0.55);  
     shape.lineTo(0,    0);
     const ext = { depth: 0.07, bevelEnabled: true, bevelSize: 0.014, bevelThickness: 0.014, bevelSegments: 2 };
     const geo = new THREE.ExtrudeGeometry(shape, ext);
@@ -674,15 +668,12 @@ const SIM = (() => {
     return fin;
   }
 
-  function makeCtrlFin(mat) {
-    // Rectangular all-moving control fin.
-    // Same convention: shape in XY plane, span=+X, height=+Y, extrude=+Z.
-    // Parent cfGrp.rotation.y handles the orbital position around the rocket.
+    function makeCtrlFin(mat) {
     const shape = new THREE.Shape();
     shape.moveTo(0,    0);
     shape.lineTo(0,    0.7);
-    shape.lineTo(1.4,  0.7);
-    shape.lineTo(1.4,  0);
+    shape.lineTo(1.0,  0.7);    // <-- EXACTLY 1.0 units (100mm) span width
+    shape.lineTo(1.0,  0);      // <-- EXACTLY 1.0 units (100mm) span width
     shape.lineTo(0,    0);
     const ext = { depth: 0.06, bevelEnabled: true, bevelSize: 0.012, bevelThickness: 0.012, bevelSegments: 2 };
     const geo = new THREE.ExtrudeGeometry(shape, ext);
