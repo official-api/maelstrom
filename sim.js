@@ -1093,7 +1093,7 @@ const SIM = (() => {
       }
     }
 
-    const ADVANCE_SPEED = 1; // units per second
+    const ADVANCE_SPEED = 5; // units per second
 
     drones.forEach((drone, i) => {
       if (!drone._alive) {
