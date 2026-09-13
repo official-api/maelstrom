@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════
-   MAELSTROM — RIGHT PANEL CANVAS ANIMATIONS v2
+   MAELSTROM - RIGHT PANEL CANVAS ANIMATIONS v2
    High-resolution, technically detailed
    ═══════════════════════════════════════════ */
 
@@ -57,7 +57,7 @@ const PANELS = (() => {
   }
 
   /* ══════════════════════════════════════════════════
-     ENGINE CROSS-SECTION — fully redrawn
+     ENGINE CROSS-SECTION - fully redrawn
      Technically accurate solid propellant cross-section
      with burning core, gas dynamics, nozzle flow
   ══════════════════════════════════════════════════ */
@@ -124,7 +124,7 @@ const PANELS = (() => {
     ctx.fillStyle = '#3a2a18';
     ctx.fillRect(caseX + wallT, linerY, caseW - wallT * 2, caseH - wallT * 2);
 
-    // ── 2. Propellant grain (HTPB/AP/Al composite — creamy tan)
+    // ── 2. Propellant grain (HTPB/AP/Al composite - creamy tan)
     const propInset = wallT * 1.6;
     const propY = caseY + propInset;
     const propH = caseH - propInset * 2;
@@ -153,7 +153,7 @@ const PANELS = (() => {
     }
     ctx.restore();
 
-    // ── 3. Central perforation (star bore) — the burning cavity
+    // ── 3. Central perforation (star bore) - the burning cavity
     const boreR   = propH * 0.24 + Math.sin(engineT * 5) * 0.8;
     const boreCx  = propX + propW * 0.48;
     const boreCy  = coreCy;
@@ -182,7 +182,7 @@ const PANELS = (() => {
     ctx.fill();
     ctx.restore();
 
-    // Burning inner surface — bright hot zone
+    // Burning inner surface - bright hot zone
     ctx.save();
     ctx.beginPath();
     for (let i = 0; i < starPts * 2; i++) {
@@ -249,7 +249,7 @@ const PANELS = (() => {
       ctx.fill();
     }
 
-    // ── 5. Nozzle — converging-diverging (de Laval)
+    // ── 5. Nozzle - converging-diverging (de Laval)
     drawNozzle(ctx, nozzX, caseY, nozzW, caseH, coreCy, engineT);
 
     // ── 6. Exhaust plume outside nozzle
@@ -304,7 +304,7 @@ const PANELS = (() => {
     const isp      = Math.floor(240 + Math.sin(engineT * 0.8) * 6);
 
     monoFont(ctx, 9.5, '#00c896');
-    ctx.fillText('SOLID PROPELLANT ENGINE — CROSS SECTION', 8, 12);
+    ctx.fillText('SOLID PROPELLANT ENGINE - CROSS SECTION', 8, 12);
 
     monoFont(ctx, 8.5, 'rgba(255,180,0,0.85)');
     ctx.fillText(`Pc: ${chamberP} MPa`, 8, H - 28);
@@ -316,7 +316,7 @@ const PANELS = (() => {
   }
 
   function drawNozzle(ctx, nx, cy, nw, caseH, coreCy, t) {
-    // De Laval nozzle silhouette — converging then diverging
+    // De Laval nozzle silhouette - converging then diverging
     const nozzTop = cy;
     const nozzBot = cy + caseH;
     const wallT = caseH * 0.065;
@@ -341,7 +341,7 @@ const PANELS = (() => {
     ctx.lineWidth = 1.2;
     ctx.stroke();
 
-    // Inner throat profile — converging-diverging
+    // Inner throat profile - converging-diverging
     const throat = caseH * 0.16;
     const throatX = nx + nw * 0.42;
     const exitH = caseH * 0.28;
@@ -389,7 +389,7 @@ const PANELS = (() => {
   function drawExhaustPlume(ctx, startX, cy, W, H, t) {
     const plumeW = W - startX - 4;
 
-    // Shock diamonds (Mach diamonds) — characteristic of supersonic exhaust
+    // Shock diamonds (Mach diamonds) - characteristic of supersonic exhaust
     const diamondCount = 4;
     for (let d = 0; d < diamondCount; d++) {
       const dx = startX + d * (plumeW / diamondCount) * 0.85;
@@ -408,7 +408,7 @@ const PANELS = (() => {
       ctx.ellipse(dx + spread * 0.4, dy, spread * 0.55, spread * 0.38, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      // Mach disc (normal shock — bright perpendicular band)
+      // Mach disc (normal shock - bright perpendicular band)
       const mdX = dx + spread * 0.9;
       ctx.save();
       ctx.globalAlpha = 0.3 - d * 0.06;
@@ -421,7 +421,7 @@ const PANELS = (() => {
       ctx.restore();
     }
 
-    // Turbulent mixing layer — shear instabilities
+    // Turbulent mixing layer - shear instabilities
     for (let i = 0; i < 22; i++) {
       const tx = startX + ((t * 3 + i * 0.7) % 1) * plumeW * 1.1;
       const spread2 = (tx - startX) / plumeW * (H * 0.22);
@@ -505,7 +505,7 @@ const PANELS = (() => {
   }
 
   /* ══════════════════════════════════════════════════
-     AEROFOIL PANEL — CFD-style professional sim
+     AEROFOIL PANEL - CFD-style professional sim
   ══════════════════════════════════════════════════ */
   let aeroT = 0;
   let aeroCanvas, aeroCtx;
@@ -644,7 +644,7 @@ const PANELS = (() => {
 
     // ── 7. Legend & readouts
     monoFont(ctx, 9.5, '#00c896');
-    ctx.fillText('CONTROL FIN — CFD ANALYSIS (NACA 0008)', 6, 12);
+    ctx.fillText('CONTROL FIN - CFD ANALYSIS (NACA 0008)', 6, 12);
 
     monoFont(ctx, 8.5, 'rgba(0,200,150,0.7)');
     ctx.fillText(`AoA: ${aoaDeg.toFixed(1)}°  |  MACH 0.9`, W - 130, 12);
@@ -653,7 +653,7 @@ const PANELS = (() => {
     monoFont(ctx, 7.5, 'rgba(100,180,255,0.8)');
     ctx.fillText('Cp+', W - 30, H * 0.22);
     monoFont(ctx, 7.5, 'rgba(255,80,80,0.8)');
-    ctx.fillText('Cp−', W - 30, H * 0.22 + 30);
+    ctx.fillText('Cp-', W - 30, H * 0.22 + 30);
 
     // L/D ratio
     const ld = (lift / drag).toFixed(1);
@@ -681,7 +681,7 @@ const PANELS = (() => {
         let cp = 0;
 
         if (isOnFoil) {
-          // Above foil — low pressure (blue)
+          // Above foil - low pressure (blue)
           if (py < foilY) {
             cp = -1.2 - Math.max(0, cpDistrib(xn, aoaDeg)) * 0.8;
           } else {
@@ -713,7 +713,7 @@ const PANELS = (() => {
       const distFromChord = Math.abs(yStart - foilY) / (H * 0.35);
       const proximity = Math.max(0, 1 - distFromChord);
 
-      // Speed — faster above (upper surface = lower pressure)
+      // Speed - faster above (upper surface = lower pressure)
       const speed = isUpper
         ? 1.0 + proximity * 0.7 * (1 + Math.sin(aoa) * 0.8)
         : 0.85 - proximity * 0.15;
@@ -823,9 +823,9 @@ const PANELS = (() => {
     ctx.fillText('Cp', x - 14, y - graphH * 0.5);
     ctx.fillText('x/c', x + chord - 12, y + 3);
     monoFont(ctx, 7, 'rgba(80,150,255,0.8)');
-    ctx.fillText('— upper', x + chord - 52, y - graphH * 0.88);
+    ctx.fillText('- upper', x + chord - 52, y - graphH * 0.88);
     monoFont(ctx, 7, 'rgba(255,100,100,0.8)');
-    ctx.fillText('— lower', x + chord - 52, y - graphH * 0.7);
+    ctx.fillText('- lower', x + chord - 52, y - graphH * 0.7);
   }
 
   function drawAoAIndicator(ctx, cx, cy, aoa, aoaDeg, chord) {
@@ -933,7 +933,7 @@ const PANELS = (() => {
       const px = (d.x + swarmDrift * (i % 3 - 1) * 0.5) * W;
       const py = (d.y + Math.sin(trackT * 0.7 + i) * 0.008) * H;
 
-      // Motor heat plumes (above the drone — warm air rising)
+      // Motor heat plumes (above the drone - warm air rising)
       for (let m = 0; m < 4; m++) {
         const mox = (m % 2 === 0 ? 1 : -1) * 6;
         const moy = (m < 2 ? 1 : -1) * 6;
@@ -959,7 +959,7 @@ const PANELS = (() => {
       ctx.arc(px, py, 16, 0, Math.PI * 2);
       ctx.fill();
 
-      // Bounding box — CNN detection result
+      // Bounding box - CNN detection result
       const confidence = 0.91 + Math.sin(trackT * 3 + i * 0.8) * 0.04;
       const blink = Math.sin(trackT * 8 + i * 0.5) > -0.4;
       if (blink) {
@@ -1025,11 +1025,11 @@ const PANELS = (() => {
 
     // HUD overlays
     monoFont(ctx, 9.5, '#00c896');
-    ctx.fillText('LWIR SEEKER — LIVE ACQUISITION', 6, 13);
+    ctx.fillText('LWIR SEEKER - LIVE ACQUISITION', 6, 13);
 
     const fps = Math.floor(119 + Math.sin(trackT * 7) * 2);
     monoFont(ctx, 8, 'rgba(0,200,150,0.5)');
-    ctx.fillText(`${fps} FPS  |  640×480  |  LWIR`, W - 150, 13);
+    ctx.fillText(`${fps} FPS  |  640*480  |  LWIR`, W - 150, 13);
 
     const det = sensorDrones.length;
     monoFont(ctx, 8.5, 'rgba(255,170,0,0.8)');
@@ -1068,7 +1068,7 @@ const PANELS = (() => {
     const cx = W * 0.35, cy = H / 2;
     const wh = H * 0.7, ww = W * 0.08;
 
-    // Warhead body — outer casing
+    // Warhead body - outer casing
     const bodyGrad = ctx.createLinearGradient(cx - ww, cy, cx + ww, cy);
     bodyGrad.addColorStop(0,   '#252e35');
     bodyGrad.addColorStop(0.25,'#3a4850');
@@ -1083,7 +1083,7 @@ const PANELS = (() => {
     roundRect(ctx, cx - ww / 2, cy - wh / 2, ww, wh, 3);
     ctx.stroke();
 
-    // Fragmentation sleeve — tungsten pre-formed fragments
+    // Fragmentation sleeve - tungsten pre-formed fragments
     const sleeveInset = ww * 0.12;
     const sleeveGrad = ctx.createLinearGradient(cx - ww + sleeveInset, cy, cx + ww - sleeveInset, cy);
     sleeveGrad.addColorStop(0, '#1a1a2a');
@@ -1110,7 +1110,7 @@ const PANELS = (() => {
       }
     }
 
-    // Explosive core (HMX/RDX — tan-yellow)
+    // Explosive core (HMX/RDX - tan-yellow)
     const coreGrad = ctx.createLinearGradient(cx - ww * 0.15, cy, cx + ww * 0.15, cy);
     coreGrad.addColorStop(0, '#5a5020');
     coreGrad.addColorStop(0.5, '#7a7030');
@@ -1195,7 +1195,7 @@ const PANELS = (() => {
     ctx.restore();
 
     monoFont(ctx, 9.5, '#00c896');
-    ctx.fillText('HARD KILL — FRAG WARHEAD CROSS-SECTION', 6, 13);
+    ctx.fillText('HARD KILL - FRAG WARHEAD CROSS-SECTION', 6, 13);
     monoFont(ctx, 8, 'rgba(255,100,80,0.8)');
     ctx.fillText(`R_KILL: 15m  V_FRAG: >400 m/s  FUZE: PROX+IMPACT`, 6, H - 8);
   }
@@ -1245,7 +1245,7 @@ const PANELS = (() => {
       ctx.beginPath(); ctx.arc(cx, cy + ph / 2, 16, 0, Math.PI * 2); ctx.fill();
     }
 
-    // Carbon fibers deploying — detailed filament simulation
+    // Carbon fibers deploying - detailed filament simulation
     const fiberCount = 80;
     for (let i = 0; i < fiberCount; i++) {
       const seed  = i * 137.5;
@@ -1273,7 +1273,7 @@ const PANELS = (() => {
       ctx.stroke();
     }
 
-    // EMP/EM glow (CF conducts — shorts electronics)
+    // EMP/EM glow (CF conducts - shorts electronics)
     if (deployPhase > 0.3) {
       const empAlpha = Math.sin(deployPhase * Math.PI) * 0.15;
       ctx.fillStyle = `rgba(50,150,255,${empAlpha})`;
@@ -1291,7 +1291,7 @@ const PANELS = (() => {
     annoLabel(ctx, 'PYRO EJECT CHARGE', cx - 46, cy + ph / 2 + 26, 'rgba(255,200,0,0.7)', 8);
 
     monoFont(ctx, 9.5, '#00aaff');
-    ctx.fillText('SOFT KILL — CARBON FIBRE BURST', 6, 13);
+    ctx.fillText('SOFT KILL - CARBON FIBRE BURST', 6, 13);
     monoFont(ctx, 8, 'rgba(100,180,255,0.8)');
     ctx.fillText(`R_EFFECT: 20m  ENTANGLEMENT + ROTOR JAM + SHORTS`, 6, H - 8);
   }
