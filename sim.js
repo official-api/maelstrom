@@ -86,7 +86,9 @@ const SIM = (() => {
     renderer.physicallyCorrectLights = true;
 
     scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x8ca0a0, 0.0028);
+    // Warm, dusty atmospheric haze — matches the sandy/mineral-mountain backdrop
+    // instead of the old cool-grey fog, so distant terrain fades believably.
+    scene.fog = new THREE.FogExp2(0xcdbd9c, 0.0021);
 
     clock = new THREE.Clock();
 
@@ -97,6 +99,7 @@ const SIM = (() => {
     buildLighting();
     buildSky();
     buildGround();
+    buildMountains();
     buildTrees();
     buildLaunchPod();
     buildDroneSwarm();
@@ -123,12 +126,12 @@ const SIM = (() => {
   ════════════════════════════════════ */
   function buildLighting() {
     // Rich ambient sky light
-    const ambient = new THREE.AmbientLight(0x304060, 0.35);
+    const ambient = new THREE.AmbientLight(0x554a3c, 0.3);
     scene.add(ambient);
 
-    // Sun - warm golden hour
-    sunLight = new THREE.DirectionalLight(0xffd080, 2.0);
-    sunLight.position.set(60, 80, -30);
+    // Sun - hard, high, bright desert midday sun (matches the goegap HDRI sky)
+    sunLight = new THREE.DirectionalLight(0xfff2d8, 2.4);
+    sunLight.position.set(70, 95, -20);
     sunLight.castShadow = true;
     sunLight.shadow.mapSize.set(4096, 4096);
     sunLight.shadow.camera.near = 0.5;
@@ -141,17 +144,17 @@ const SIM = (() => {
     sunLight.shadow.normalBias = 0.02;
     scene.add(sunLight);
 
-    // Sky fill - cool blue opposite
-    const fillLight = new THREE.DirectionalLight(0x4488cc, 0.6);
+    // Sky fill - pale desert-blue opposite the sun
+    const fillLight = new THREE.DirectionalLight(0xaecbdc, 0.45);
     fillLight.position.set(-30, 20, 40);
     scene.add(fillLight);
 
-    // Hemisphere - sky/ground bounce
-    const hemi = new THREE.HemisphereLight(0x4477aa, 0x1a3310, 0.5);
+    // Hemisphere - sky/ground bounce, tinted for sand + mineral rock instead of grass
+    const hemi = new THREE.HemisphereLight(0x9fc4dd, 0x8a6a45, 0.55);
     scene.add(hemi);
 
-    // Ground bounce (warm)
-    const bounce = new THREE.DirectionalLight(0x887755, 0.3);
+    // Ground bounce (warm sand reflectance)
+    const bounce = new THREE.DirectionalLight(0xcaa877, 0.35);
     bounce.position.set(0, -10, 0);
     scene.add(bounce);
   }
@@ -159,7 +162,34 @@ const SIM = (() => {
   /* ════════════════════════════════════
      SKY
   ════════════════════════════════════ */
+  // Real, photographed 360° sky (Poly Haven "Goegap" — CC0 desert HDRI: clear
+  // midday sun over sandy/rocky terrain) instead of a native three.js shader
+  // gradient. Used both as the visible backdrop and as scene.environment so
+  // metal/rock surfaces pick up real-world reflections and ambient colour.
+  const SKY_HDRI_URL = 'https://dl.polyhaven.org/file/ph-assets/HDRIs/extra/Tonemapped%20JPG/goegap.jpg';
+
   function buildSky() {
+    const loader = new THREE.TextureLoader();
+    loader.crossOrigin = 'anonymous';
+    loader.load(
+      SKY_HDRI_URL,
+      (tex) => {
+        tex.mapping = THREE.EquirectangularReflectionMapping;
+        tex.encoding = THREE.sRGBEncoding;
+        scene.background = tex;
+        scene.environment = tex; // image-based lighting from the real photo
+      },
+      undefined,
+      (err) => {
+        console.warn('[MAELSTROM] Sky HDRI failed to load — using procedural fallback sky.', err);
+        buildProceduralSkyFallback();
+      }
+    );
+  }
+
+  // Fallback only: reproduces the original native three.js gradient sky, used
+  // solely if the external HDRI asset can't be reached (offline / blocked CDN).
+  function buildProceduralSkyFallback() {
     const skyGeo = new THREE.SphereGeometry(800, 48, 24);
     const skyMat = new THREE.ShaderMaterial({
       uniforms: {
@@ -183,12 +213,10 @@ const SIM = (() => {
           float h = vWorldDir.y;
           vec3 sky = mix(botColor, midColor, smoothstep(-0.1, 0.3, h));
           sky = mix(sky, topColor, smoothstep(0.2, 0.9, h));
-          // Sun disc
           float sun = max(0.0, dot(normalize(vWorldDir), sunDir));
           float disc = pow(sun, 180.0);
           float halo = pow(sun, 8.0) * 0.4;
           sky += sunColor * disc * 3.0 + sunColor * halo;
-          // Atmospheric scattering tint near horizon
           float horiz = exp(-abs(h) * 6.0);
           sky = mix(sky, vec3(0.7, 0.85, 0.9), horiz * 0.25);
           gl_FragColor = vec4(sky, 1.0);
@@ -198,40 +226,42 @@ const SIM = (() => {
     });
     skyDome = new THREE.Mesh(skyGeo, skyMat);
     scene.add(skyDome);
-
-    // Clouds - simple billboard planes
-    buildClouds();
-  }
-
-  function buildClouds() {
-    const cloudPositions = [
-      [80, 55, -120], [-60, 48, -100], [130, 52, -80],
-      [-100, 60, -150], [50, 45, -200], [-150, 50, -60]
-    ];
-    cloudPositions.forEach(([x, y, z]) => {
-      const w = 40 + Math.random() * 50;
-      const h2 = 12 + Math.random() * 10;
-      const geo = new THREE.PlaneGeometry(w, h2);
-      const mat = new THREE.MeshBasicMaterial({
-        color: new THREE.Color(0.95, 0.97, 1.0),
-        transparent: true,
-        opacity: 0.35 + Math.random() * 0.2,
-        side: THREE.DoubleSide,
-        depthWrite: false
-      });
-      const cloud = new THREE.Mesh(geo, mat);
-      cloud.position.set(x, y, z);
-      cloud.rotation.y = Math.random() * Math.PI;
-      scene.add(cloud);
-    });
   }
 
   /* ════════════════════════════════════
      GROUND - procedural terrain
   ════════════════════════════════════ */
+  // Real, photographed CC0 PBR texture sets (Poly Haven) used to skin the
+  // terrain instead of flat native-three.js vertex colours.
+  const GROUND_TEX_BASE = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/sandy_gravel_02/sandy_gravel_02_';
+  const ROCK_TEX_BASE    = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/rock_face_03/rock_face_03_';
+
+  function loadRepeatingTexture(loader, url, repeatX, repeatY, isColorMap) {
+    const tex = loader.load(url, undefined, undefined, () => {
+      console.warn('[MAELSTROM] texture failed to load:', url);
+    });
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(repeatX, repeatY);
+    if (isColorMap) tex.encoding = THREE.sRGBEncoding;
+    if (renderer) tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return tex;
+  }
+
   function buildGround() {
-    // Simple flat ground — reliable baseline for r128
-    const groundGeo = new THREE.PlaneGeometry(400, 400, 80, 80);
+    const loader = new THREE.TextureLoader();
+    loader.crossOrigin = 'anonymous';
+    const REPEAT = 30;
+
+    const diffuseMap  = loadRepeatingTexture(loader, GROUND_TEX_BASE + 'diff_2k.jpg', REPEAT, REPEAT, true);
+    const normalMap   = loadRepeatingTexture(loader, GROUND_TEX_BASE + 'nor_gl_2k.jpg', REPEAT, REPEAT, false);
+    const roughMap    = loadRepeatingTexture(loader, GROUND_TEX_BASE + 'rough_2k.jpg', REPEAT, REPEAT, false);
+    const aoMap       = loadRepeatingTexture(loader, GROUND_TEX_BASE + 'ao_2k.jpg', REPEAT, REPEAT, false);
+    const dispMap     = loadRepeatingTexture(loader, GROUND_TEX_BASE + 'disp_2k.jpg', REPEAT, REPEAT, false);
+
+    // Higher subdivision than the old flat plane so both the broad dune
+    // undulation (fbm) and the fine photographic displacement map read well.
+    const groundGeo = new THREE.PlaneGeometry(400, 400, 128, 128);
     const pos = groundGeo.attributes.position;
 
     // Displace Y (local, pre-rotation) — PlaneGeometry in r128 uses X/Y in plane, Z=0
@@ -244,22 +274,75 @@ const SIM = (() => {
       pos.setZ(i, h);
     }
     groundGeo.computeVertexNormals();
+    // aoMap requires a second UV channel — reuse the primary UVs.
+    groundGeo.setAttribute('uv2', new THREE.BufferAttribute(groundGeo.attributes.uv.array.slice(), 2));
 
-    const groundMat = new THREE.MeshLambertMaterial({ color: 0x2d5a1b });
+    const groundMat = new THREE.MeshStandardMaterial({
+      map: diffuseMap,
+      normalMap: normalMap,
+      roughnessMap: roughMap,
+      aoMap: aoMap,
+      displacementMap: dispMap,
+      displacementScale: 0.3,
+      displacementBias: -0.12,
+      roughness: 1.0,
+      metalness: 0.0,
+    });
     ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     scene.add(ground);
 
-    // Darker patches near launch pad
-    const patchMat = new THREE.MeshLambertMaterial({ color: 0x6a5535 });
+    // Darker, scorched patches near launch pad
+    const patchMat = new THREE.MeshStandardMaterial({ color: 0x352a1f, roughness: 1.0 });
     [[- 8, 8, 3.5], [-10, 6, 2], [-6, 11, 1.5]].forEach(([px, pz, pr]) => {
-      const pg = new THREE.Mesh(new THREE.CircleGeometry(pr, 10), patchMat);
+      const pg = new THREE.Mesh(new THREE.CircleGeometry(pr, 16), patchMat);
       pg.rotation.x = -Math.PI / 2;
       pg.position.set(px, 0.02, pz);
       scene.add(pg);
     });
+  }
 
+  /* ════════════════════════════════════
+     DISTANT MOUNTAINS - real rock-face PBR
+     texture wrapped around the horizon, giving
+     the "entire background" a proper landform
+     instead of just sky meeting a flat plane.
+  ════════════════════════════════════ */
+  function buildMountains() {
+    const loader = new THREE.TextureLoader();
+    loader.crossOrigin = 'anonymous';
+
+    const diffuseMap = loadRepeatingTexture(loader, ROCK_TEX_BASE + 'diff_2k.jpg', 18, 3, true);
+    const normalMap  = loadRepeatingTexture(loader, ROCK_TEX_BASE + 'nor_gl_2k.jpg', 18, 3, false);
+    const roughMap   = loadRepeatingTexture(loader, ROCK_TEX_BASE + 'rough_2k.jpg', 18, 3, false);
+
+    const radius = 300;
+    const height = 95;
+    const geo = new THREE.CylinderGeometry(radius, radius * 1.04, height, 128, 10, true);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+      const angle = Math.atan2(z, x);
+      const ridge = fbm(Math.cos(angle) * 3 + 40, Math.sin(angle) * 3 + 40, 5);
+      const heightRatio = (y + height / 2) / height; // 0 bottom -> 1 top
+      const profile = 0.22 + Math.pow(ridge, 1.3) * 0.85; // per-angle silhouette height
+      pos.setY(i, -height / 2 + heightRatio * height * profile);
+    }
+    geo.computeVertexNormals();
+
+    const mat = new THREE.MeshStandardMaterial({
+      map: diffuseMap,
+      normalMap: normalMap,
+      roughnessMap: roughMap,
+      roughness: 1.0,
+      metalness: 0.0,
+      side: THREE.DoubleSide,
+      fog: true,
+    });
+    const mountains = new THREE.Mesh(geo, mat);
+    mountains.position.y = height / 2 - 3;
+    scene.add(mountains);
   }
 
   /* ════════════════════════════════════
