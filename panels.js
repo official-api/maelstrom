@@ -771,7 +771,7 @@ const PANELS = (() => {
       // Velocity arrow markers along line
       for (let ax = foilX - 30; ax < W - 20; ax += 48) {
         const axn = (ax - foilX) / chord;
-        const localSpeed = (xn >= 0 && xn <= 1) ? speed : 1.0;
+        const localSpeed = (axn >= 0 && axn <= 1) ? speed : 1.0;
         const arrowLen = 5 + localSpeed * 4;
         ctx.beginPath();
         ctx.moveTo(ax, yStart);
