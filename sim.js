@@ -92,13 +92,17 @@ const SIM = (() => {
     buildDroneSwarm();
 
     window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', () => setTimeout(onResize, 200));
     animate();
   }
 
   function onResize() {
     const canvas = renderer.domElement;
-    const W = canvas.parentElement.clientWidth;
-    const H = canvas.parentElement.clientHeight - 24;
+    const parent = canvas.parentElement;
+    if (!parent) return;
+    const W = parent.clientWidth;
+    const H = parent.clientHeight - 22;
+    if (W < 1 || H < 1) return;
     renderer.setSize(W, H);
     camera.aspect = W / H;
     camera.updateProjectionMatrix();
