@@ -24,17 +24,14 @@ const SIM = (() => {
   let trajectoryPoints = [];
   let launchOrigin = new THREE.Vector3();
   let launchDir = new THREE.Vector3(0, 1, 0); // world-space direction the launch tube (and loaded rocket) points
-  let droneActiveTime = 0; // accumulates only while drones aren't paused, so dive phase never jumps on resume
-  const MIN_DRONE_ALTITUDE = 60; // floor so dive manoeuvres never drop the swarm into the mountain silhouette
-  // Whole-swarm synchronized dive: every drone shares this single damped
-  // oscillation rather than each following its own pattern. The wave starts
-  // big and decays asymptotically toward level flight, then a fresh dive
-  // re-triggers, like a real formation making a repeated evasive swoop.
-  const SWARM_DIVE_PERIOD = 6.5;      // seconds per oscillation within a dive
-  const SWARM_DIVE_DECAY = 0.32;      // how fast the oscillation settles out
-  const SWARM_DIVE_RETRIGGER = 16.0;  // seconds between fresh dives
-  const SWARM_DIVE_AMPLITUDE = 17;    // initial vertical swoop range (units)
-  const SWARM_LATERAL_AMPLITUDE = 6;  // initial side-to-side swoop range (units)
+  let droneActiveTime = 0; // accumulates only while drones aren't paused
+  // Smooth 1/x-style descent: swarm starts high and dives continuously
+  // toward the launch pod with no oscillations — altitude drops as
+  // START_ALT / (1 + k*t), giving the characteristic steep-then-flattening
+  // curve from the reference image.
+  const DRONE_START_ALT  = 78;   // initial swarm altitude (matches spawn Y)
+  const DRONE_DIVE_K     = 0.018; // controls how sharply altitude falls off
+  const DRONE_DIVE_FLOOR = 8;    // minimum altitude the swarm reaches
   let controlFinAngle = 0;
   let engineFlame, engineFlame2, engineLight;
   let rocketFired = false;
@@ -938,34 +935,9 @@ const SIM = (() => {
   }
 
   /* ════════════════════════════════════
-     TRAIL PARTICLES
+     TRAIL PARTICLES  (disabled)
   ════════════════════════════════════ */
-  function spawnTrail() {
-    if (!rocketFired) return;
-    const layers = [
-      { col: new THREE.Color(1, 1, 0.9), r: 0.06, speed: 0.6 },
-      { col: new THREE.Color(1, 0.55, 0.05), r: 0.12, speed: 0.4 },
-      { col: new THREE.Color(0.8, 0.2, 0.0), r: 0.18, speed: 0.25 },
-      { col: new THREE.Color(0.4, 0.4, 0.4), r: 0.28, speed: 0.15 },
-    ];
-    layers.forEach(({ col, r, speed }) => {
-      const geo = new THREE.SphereGeometry(r + Math.random() * r * 0.5, 6, 6);
-      const mat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.9 });
-      const p = new THREE.Mesh(geo, mat);
-      p.position.copy(rocketPos).add(new THREE.Vector3(
-        (Math.random() - 0.5) * 0.2,
-        (Math.random() - 0.5) * 0.2,
-        (Math.random() - 0.5) * 0.2
-      ));
-      p._vel = rocketVel.clone().normalize().multiplyScalar(-speed * (0.5 + Math.random() * 0.5)).add(
-        new THREE.Vector3((Math.random() - 0.5) * 0.06, 0.04 + Math.random() * 0.06, (Math.random() - 0.5) * 0.06)
-      );
-      p._life = 1;
-      p._decay = 0.9 + Math.random() * 0.5;
-      scene.add(p);
-      trailParticles.push(p);
-    });
-  }
+  function spawnTrail() { /* trail removed */ }
 
   /* ════════════════════════════════════
      INTERCEPT EFFECTS
@@ -1102,30 +1074,28 @@ const SIM = (() => {
   }
 
   function updateDrones(dt) {
-    // Drones hold position (frozen mid-manoeuvre) whenever the missile is
-    // paused between flight stages -- the whole engagement is on hold, not
-    // just the interceptor.
+    // Freeze the whole engagement while the missile is between staged pauses.
     const paused = rocketPaused && simState === 'flight';
     if (!paused) droneActiveTime += dt;
 
-    // One shared dive pattern for the entire swarm: a damped oscillation
-    // that starts with a big swoop and decays asymptotically toward level
-    // flight, then re-triggers into a fresh dive -- every drone reads the
-    // exact same wave, so the formation moves as a single unit rather than
-    // each drone doing its own thing.
-    const cyclePos = droneActiveTime % SWARM_DIVE_RETRIGGER;
-    const angFreq = Math.PI * 2 / SWARM_DIVE_PERIOD;
-    const envelope = Math.exp(-SWARM_DIVE_DECAY * cyclePos); // -> 0 asymptotically within each cycle
-    const diveOffset = Math.sin(angFreq * cyclePos) * envelope * SWARM_DIVE_AMPLITUDE;
-    const lateralPhase = angFreq * 0.5 * cyclePos + 0.6;
-    const lateralOffsetX = Math.sin(lateralPhase) * envelope * SWARM_LATERAL_AMPLITUDE;
-    const lateralOffsetZ = Math.cos(lateralPhase * 0.8) * envelope * SWARM_LATERAL_AMPLITUDE;
-    // Roughly the wave's instantaneous vertical rate, used to bank the whole
-    // formation into the dive (envelope's own decay is slow enough vs. the
-    // oscillation to ignore its derivative here without it looking wrong).
-    const vertRate = Math.cos(angFreq * cyclePos) * angFreq * envelope;
-    const bankZ = THREE.MathUtils.clamp(-vertRate * SWARM_DIVE_AMPLITUDE * 0.05, -0.6, 0.6);
-    const bankX = THREE.MathUtils.clamp(vertRate * SWARM_DIVE_AMPLITUDE * 0.035, -0.4, 0.4);
+    // Smooth 1/x-style altitude: alt = DRONE_START_ALT / (1 + k*t) + floor
+    // This gives the steep-then-flattening descent profile from the reference
+    // image with zero oscillation.
+    const swarmAlt = DRONE_DIVE_FLOOR +
+      (DRONE_START_ALT - DRONE_DIVE_FLOOR) / (1 + DRONE_DIVE_K * droneActiveTime);
+
+    // Horizontal: entire swarm glides steadily toward the launch pod at (-8, y, 8).
+    // Speed is proportional to remaining XZ distance so the swarm slows as it
+    // closes — matching the hyperbolic shape in the vertical axis.
+    const POD_X = -8, POD_Z = 8;
+    const ADVANCE_SPEED = 0.12; // units per second (XZ plane)
+
+    // Pitch the formation nose-down proportional to descent rate so it looks
+    // like it's actually diving rather than sliding flat.
+    const altPrev = DRONE_DIVE_FLOOR +
+      (DRONE_START_ALT - DRONE_DIVE_FLOOR) / (1 + DRONE_DIVE_K * Math.max(droneActiveTime - dt, 0));
+    const descentRate = (altPrev - swarmAlt) / Math.max(dt, 0.001); // units/s downward
+    const pitchAngle = THREE.MathUtils.clamp(descentRate * 0.018, 0, 0.55); // nose-down in radians
 
     drones.forEach((drone, i) => {
       if (!drone._alive) {
@@ -1138,48 +1108,40 @@ const SIM = (() => {
         return;
       }
 
-      if (simState === 'approach') {
-        const towardPod = new THREE.Vector3(-8, 0, 8).sub(drone._dynamicBase);
-        const dist2 = towardPod.length();
-        if (dist2 > 5) {
-          towardPod.normalize().multiplyScalar(0.008);
-          drone._vel.add(towardPod);
-          drone._vel.clampLength(0, 0.025);
-        }
-      }
-
       if (paused) return; // hold exactly where it was when the pause hit
 
-      // Slow drift of the manoeuvre's "centre" (formation advance / approach).
-      drone._dynamicBase.addScaledVector(drone._vel, 1);
+      // Advance the drone's horizontal base toward the pod.
+      const dx = POD_X - drone._dynamicBase.x;
+      const dz = POD_Z - drone._dynamicBase.z;
+      const horizDist = Math.sqrt(dx * dx + dz * dz);
+      if (horizDist > 0.5) {
+        const step = Math.min(ADVANCE_SPEED * dt, horizDist);
+        drone._dynamicBase.x += (dx / horizDist) * step;
+        drone._dynamicBase.z += (dz / horizDist) * step;
+      }
 
-      // Apply the one shared swarm-wide dive wave on top of this drone's own
-      // formation slot, so the whole swarm swoops together as a single body.
-      const desiredY = drone._dynamicBase.y + diveOffset;
-      // Floor keeps the swarm from ever diving low enough to disappear
-      // against the mountain silhouette behind it.
-      drone.position.y = Math.max(desiredY, MIN_DRONE_ALTITUDE);
-      drone.position.x = drone._dynamicBase.x + lateralOffsetX;
-      drone.position.z = drone._dynamicBase.z + lateralOffsetZ;
+      // Apply the shared smooth altitude to every drone (keeping each one's
+      // formation offset relative to the swarm centre).
+      const offsetY = drone._basePos.y - DRONE_START_ALT; // each drone's slot offset
+      drone.position.x = drone._dynamicBase.x + (drone._basePos.x - drone._basePos.x); // slot X stays fixed
+      drone.position.z = drone._dynamicBase.z + (drone._basePos.z - drone._basePos.z); // slot Z stays fixed
+      drone.position.x = drone._dynamicBase.x;
+      drone.position.z = drone._dynamicBase.z;
+      drone.position.y = Math.max(swarmAlt + offsetY, DRONE_DIVE_FLOOR + offsetY);
 
-      // Whole formation banks/pitches into the dive together.
-      drone.rotation.z = bankZ;
-      drone.rotation.x = bankX;
-      drone.rotation.y += dt * 0.5;
+      // Nose-down pitch into the dive; slow yaw spin for life.
+      drone.rotation.x = pitchAngle;
+      drone.rotation.z = 0;
+      drone.rotation.y += dt * 0.4;
     });
 
-    // Keep the guidance/interception target locked to where the swarm
-    // ACTUALLY is right now, not a stale snapshot from spawn time. We track
-    // the smooth per-drone "_dynamicBase" (the manoeuvre centre) rather than
-    // each drone's instantaneous, swooping position, so the missile guides
-    // toward the swarm's real formation centre instead of jittering after
-    // every individual dive.
+    // Lock the guidance target to the swarm's live formation centre.
     if (drones.length > 0) {
       let cx = 0, cy = 0, cz = 0, count = 0;
       for (let i = 0; i < drones.length; i++) {
         const d = drones[i];
         if (d._alive === false) continue;
-        cx += d._dynamicBase.x; cy += d._dynamicBase.y; cz += d._dynamicBase.z;
+        cx += d._dynamicBase.x; cy += d.position.y; cz += d._dynamicBase.z;
         count++;
       }
       if (count > 0) droneSwarmCenter.set(cx / count, cy / count, cz / count);
@@ -1319,16 +1281,6 @@ const SIM = (() => {
   }
 
   function updateParticles(dt) {
-    // Trail
-    for (let i = trailParticles.length - 1; i >= 0; i--) {
-      const p = trailParticles[i];
-      p._life -= dt * p._decay;
-      p.position.add(p._vel);
-      p.material.opacity = Math.max(0, p._life * 0.85);
-      p.scale.setScalar(Math.max(0.1, p._life));
-      if (p._life <= 0) { scene.remove(p); trailParticles.splice(i, 1); }
-    }
-
     // Explosion
     for (let i = explosionParticles.length - 1; i >= 0; i--) {
       const item = explosionParticles[i];
