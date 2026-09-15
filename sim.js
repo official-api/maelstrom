@@ -5,7 +5,7 @@
 
 const SIM = (() => {
   let renderer, scene, camera, clock;
-  let ground, skyDome;
+  let ground, skyDome, groundedSkyMat;
   let rocketGroup = null;
   let drones = [];
   let launchPod;
@@ -109,11 +109,11 @@ const SIM = (() => {
     camera.position.set(-14, 7, 20);
     camera.lookAt(0, 2, 0);
 
-    // All external texture/HDRI loads (sky, ground, mountains) go through
-    // three.js's shared DefaultLoadingManager, so we can report combined
-    // progress and a single "everything's ready" moment back to the UI for
-    // the loading screen — this must be wired up BEFORE buildSky/buildGround/
-    // buildMountains kick off their loads below.
+    // All external texture/HDRI loads (sky, ground) go through three.js's
+    // shared DefaultLoadingManager, so we can report combined progress and a
+    // single "everything's ready" moment back to the UI for the loading
+    // screen — this must be wired up BEFORE buildSky/buildGround kick off
+    // their loads below.
     THREE.DefaultLoadingManager.onProgress = (url, itemsLoaded, itemsTotal) => {
       if (onLoadProgressCb) onLoadProgressCb(itemsLoaded, itemsTotal);
     };
@@ -127,7 +127,6 @@ const SIM = (() => {
     buildLighting();
     buildSky();
     buildGround();
-    buildMountains();
     buildDroneSwarm();   // must exist first so the launch pod can be oriented to face it
     buildLaunchPod();
     buildRocket();       // rocket is loaded in the tube and visible from the very start
@@ -188,13 +187,29 @@ const SIM = (() => {
   }
 
   /* ════════════════════════════════════
-     SKY
+     SKY — grounded skybox
   ════════════════════════════════════ */
   // Real, photographed 360° sky (Poly Haven "Goegap" — CC0 desert HDRI: clear
   // midday sun over sandy/rocky terrain) instead of a native three.js shader
   // gradient. Used both as the visible backdrop and as scene.environment so
   // metal/rock surfaces pick up real-world reflections and ambient colour.
+  //
+  // Rather than dropping the panorama straight onto scene.background (a pure
+  // "sky at infinity" projection) and then hiding the inevitable seam where
+  // the flat textured ground meets that infinite backdrop behind a ring of
+  // fake mountains, we project the HDRI onto a "grounded" skybox: a huge
+  // sphere whose lower half re-samples the panorama as if it were draped
+  // over our actual ground plane. Below the horizon, each pixel's view ray
+  // is intersected with the world ground plane and re-projected from a
+  // fixed eye-height above that plane, so the photographed ground recedes
+  // and parallaxes correctly as the camera moves — instead of looking like
+  // a static texture glued to a distant sphere. That makes the real
+  // (textured, displaced) foreground ground blend into the panorama's own
+  // ground with no visible boundary, and removes the need for the mountain
+  // ring entirely.
   const SKY_HDRI_URL = 'https://dl.polyhaven.org/file/ph-assets/HDRIs/extra/Tonemapped%20JPG/goegap.jpg';
+  const SKY_GROUND_LEVEL = 0;   // world Y of the real ground plane (see buildGround)
+  const SKY_EYE_HEIGHT   = 1.7; // assumed HDRI capture height above that ground
 
   function buildSky() {
     const loader = new THREE.TextureLoader();
@@ -204,8 +219,10 @@ const SIM = (() => {
       (tex) => {
         tex.mapping = THREE.EquirectangularReflectionMapping;
         tex.encoding = THREE.sRGBEncoding;
-        scene.background = tex;
+        tex.minFilter = THREE.LinearFilter;
+        tex.magFilter = THREE.LinearFilter;
         scene.environment = tex; // image-based lighting from the real photo
+        buildGroundedSkybox(tex);
       },
       undefined,
       (err) => {
@@ -213,6 +230,74 @@ const SIM = (() => {
         buildProceduralSkyFallback();
       }
     );
+  }
+
+  function buildGroundedSkybox(tex) {
+    const geo = new THREE.SphereGeometry(850, 64, 40);
+    groundedSkyMat = new THREE.ShaderMaterial({
+      uniforms: {
+        tEquirect:    { value: tex },
+        uCameraPos:   { value: new THREE.Vector3() },
+        uGroundLevel: { value: SKY_GROUND_LEVEL },
+        uEyeHeight:   { value: SKY_EYE_HEIGHT },
+      },
+      vertexShader: `
+        varying vec3 vWorldPosition;
+        void main() {
+          vWorldPosition = (modelMatrix * vec4(position, 1.0)).xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D tEquirect;
+        uniform vec3 uCameraPos;
+        uniform float uGroundLevel;
+        uniform float uEyeHeight;
+        varying vec3 vWorldPosition;
+
+        const float PI2 = 6.28318530718;
+        const float PI  = 3.14159265359;
+
+        vec2 equirectUv(vec3 dir) {
+          float u = atan(dir.z, dir.x) / PI2 + 0.5;
+          float v = asin(clamp(dir.y, -1.0, 1.0)) / PI + 0.5;
+          return vec2(u, v);
+        }
+
+        void main() {
+          vec3 dir = normalize(vWorldPosition - uCameraPos);
+          vec3 sampleDir = dir;
+
+          if (dir.y < -0.0005) {
+            // Where this view ray actually meets our real ground plane.
+            float t = (uGroundLevel - uCameraPos.y) / dir.y;
+            vec3 hit = uCameraPos + dir * t;
+            // Re-project that ground point from a fixed eye-height directly
+            // above the camera's own footprint, so the panorama's ground
+            // recedes toward the horizon with correct, camera-relative
+            // parallax instead of behaving like a texture stuck to the sky.
+            vec3 projOrigin = vec3(uCameraPos.x, uGroundLevel + uEyeHeight, uCameraPos.z);
+            sampleDir = normalize(hit - projOrigin);
+          }
+
+          vec2 uv = equirectUv(sampleDir);
+          gl_FragColor = texture2D(tEquirect, uv);
+        }
+      `,
+      side: THREE.BackSide,
+      depthWrite: false,
+      fog: false,
+    });
+
+    skyDome = new THREE.Mesh(geo, groundedSkyMat);
+    skyDome.renderOrder = -1000;
+    scene.add(skyDome);
+  }
+
+  // Keeps the grounded skybox's ray origin in sync with the real camera so
+  // the ground-plane re-projection tracks correctly every frame.
+  function updateGroundedSky() {
+    if (groundedSkyMat) groundedSkyMat.uniforms.uCameraPos.value.copy(camera.position);
   }
 
   // Fallback only: reproduces the original native three.js gradient sky, used
@@ -262,7 +347,6 @@ const SIM = (() => {
   // Real, photographed CC0 PBR texture sets (Poly Haven) used to skin the
   // terrain instead of flat native-three.js vertex colours.
   const GROUND_TEX_BASE = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/sandy_gravel_02/sandy_gravel_02_';
-  const ROCK_TEX_BASE    = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/rock_face_03/rock_face_03_';
 
   function loadRepeatingTexture(loader, url, repeatX, repeatY, isColorMap) {
     const tex = loader.load(url, undefined, undefined, () => {
@@ -279,10 +363,10 @@ const SIM = (() => {
   function buildGround() {
     const loader = new THREE.TextureLoader();
     loader.crossOrigin = 'anonymous';
-    // Ground must extend at least as far as the mountain ring's base radius
-    // (see buildMountains) in every direction, or the horizon shows a gap of
-    // empty space between the flat plane and the surrounding peaks.
-    const GROUND_SIZE = 700; // half-width 350, comfortably beyond MOUNTAIN_RADIUS (300)
+    // The ground only needs to reach out far enough that its edge is lost in
+    // fog/distance before the grounded skybox's re-projected horizon takes
+    // over seamlessly (see buildGroundedSkybox).
+    const GROUND_SIZE = 700;
     const REPEAT = 30 * (GROUND_SIZE / 400); // keep texel density constant vs. the old 400-unit plane
 
     const diffuseMap  = loadRepeatingTexture(loader, GROUND_TEX_BASE + 'diff_2k.jpg', REPEAT, REPEAT, true);
@@ -333,51 +417,6 @@ const SIM = (() => {
       pg.position.set(px, 0.02, pz);
       scene.add(pg);
     });
-  }
-
-  /* ════════════════════════════════════
-     DISTANT MOUNTAINS - real rock-face PBR
-     texture wrapped around the horizon, giving
-     the "entire background" a proper landform
-     instead of just sky meeting a flat plane.
-  ════════════════════════════════════ */
-  function buildMountains() {
-    const loader = new THREE.TextureLoader();
-    loader.crossOrigin = 'anonymous';
-
-    const diffuseMap = loadRepeatingTexture(loader, ROCK_TEX_BASE + 'diff_2k.jpg', 18, 3, true);
-    const normalMap  = loadRepeatingTexture(loader, ROCK_TEX_BASE + 'nor_gl_2k.jpg', 18, 3, false);
-    const roughMap   = loadRepeatingTexture(loader, ROCK_TEX_BASE + 'rough_2k.jpg', 18, 3, false);
-
-    // Must stay comfortably inside the ground plane's half-width (350, see
-    // buildGround) so the mountain ring's base is always covered by textured
-    // ground and never leaves a visible gap of empty space at the horizon.
-    const MOUNTAIN_RADIUS = 300;
-    const height = 95;
-    const geo = new THREE.CylinderGeometry(MOUNTAIN_RADIUS, MOUNTAIN_RADIUS * 1.04, height, 128, 10, true);
-    const pos = geo.attributes.position;
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
-      const angle = Math.atan2(z, x);
-      const ridge = fbm(Math.cos(angle) * 3 + 40, Math.sin(angle) * 3 + 40, 5);
-      const heightRatio = (y + height / 2) / height; // 0 bottom -> 1 top
-      const profile = 0.22 + Math.pow(ridge, 1.3) * 0.85; // per-angle silhouette height
-      pos.setY(i, -height / 2 + heightRatio * height * profile);
-    }
-    geo.computeVertexNormals();
-
-    const mat = new THREE.MeshStandardMaterial({
-      map: diffuseMap,
-      normalMap: normalMap,
-      roughnessMap: roughMap,
-      roughness: 1.0,
-      metalness: 0.0,
-      side: THREE.DoubleSide,
-      fog: true,
-    });
-    const mountains = new THREE.Mesh(geo, mat);
-    mountains.position.y = height / 2 - 3;
-    scene.add(mountains);
   }
 
   /* ════════════════════════════════════
@@ -820,9 +859,8 @@ const SIM = (() => {
     // Placed a long way out (~210 units) so the missile's flight has plenty
     // of runway for the engine / aerofoil / tracking stages to each get
     // real screen time before final approach.
-    // Altitude raised well above the mountain ridge-line (~45-60 units at
-    // this bearing) so the swarm silhouettes cleanly against open sky
-    // instead of camouflaging against the rock backdrop.
+    // Altitude raised well above the horizon so the swarm silhouettes
+    // cleanly against open sky instead of camouflaging against the ground.
     const swarmCenter = new THREE.Vector3(150, 78, -130);
     droneSwarmCenter.copy(swarmCenter);
 
@@ -1413,6 +1451,7 @@ const SIM = (() => {
     updateRocket(dt);
     updateParticles(dt);
     updateCamera(dt);
+    updateGroundedSky();
 
     renderer.render(scene, camera);
   }
