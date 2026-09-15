@@ -109,7 +109,7 @@ window.AEROFOIL_CFD = (() => {
 
       vec2 eIA = vec2(cos(uAoA), sin(uAoA));
       vec2 eNegIA = vec2(cos(uAoA), -sin(uAoA));
-      float Gamma = 4.0 * PI * R * sin(uAoA);   // Kutta-condition circulation
+      float Gamma = -4.0 * PI * R * sin(uAoA);  // Kutta-condition circulation
 
       vec2 w2 = cmul(w, w);
       vec2 dWdzeta = eNegIA - cdiv(cmul(vec2(R * R, 0.0), eIA), w2)
