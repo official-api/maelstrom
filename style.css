@@ -504,6 +504,11 @@ body {
   inset: 0;
   pointer-events: none;
 }
+/* Part-name pins (IGNITER/GRAIN/CASE/NOZZLE/FIN) hidden on the engine
+   cutaway — leader lines, dots and text all live under #engineLabels. */
+#engineLabels {
+  display: none;
+}
 .gl-leader-svg {
   position: absolute;
   top: 0; left: 0;
