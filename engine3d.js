@@ -14,24 +14,24 @@ window.ENGINE3D = (() => {
 
   // Part name (from the GLB, one node per original STEP solid) → look.
   const PART_STYLE = {
-    shell_case:            { kind: 'shell',    color: 0x3c4a34 },
-    aft_closure_plate:     { kind: 'metal',    color: 0x7a828a },
-    aft_bulkhead:          { kind: 'metal',    color: 0x7a828a },
-    grain_seg_1:           { kind: 'grain',    color: 0xc48a52 },
-    grain_seg_2:           { kind: 'grain',    color: 0xc48a52 },
-    grain_seg_3:           { kind: 'grain',    color: 0xc48a52 },
-    grain_seg_4:           { kind: 'grain',    color: 0xc48a52 },
-    nozzle_housing:        { kind: 'ablative', color: 0x1c1714 },
-    nozzle_throat_insert:  { kind: 'throat',   color: 0x8a3016 },
-    nozzle_cone:           { kind: 'ablative', color: 0x1c1714 },
-    nozzle_interface_ring: { kind: 'metal',    color: 0x7a828a },
-    nozzle_exit_ring:      { kind: 'metal',    color: 0x7a828a },
-    fin_fwd_0: { kind: 'fin', color: 0x9aa4ab }, fin_fwd_1: { kind: 'fin', color: 0x9aa4ab },
-    fin_fwd_2: { kind: 'fin', color: 0x9aa4ab }, fin_fwd_3: { kind: 'fin', color: 0x9aa4ab },
-    fin_aft_0: { kind: 'fin', color: 0x9aa4ab }, fin_aft_1: { kind: 'fin', color: 0x9aa4ab },
-    fin_aft_2: { kind: 'fin', color: 0x9aa4ab }, fin_aft_3: { kind: 'fin', color: 0x9aa4ab },
-    tab_0: { kind: 'metal', color: 0x5c6268 }, tab_1: { kind: 'metal', color: 0x5c6268 },
-    tab_2: { kind: 'metal', color: 0x5c6268 }, tab_3: { kind: 'metal', color: 0x5c6268 },
+    shell_case:            { kind: 'shell',    color: 0x00d9ff },
+    aft_closure_plate:     { kind: 'metal',    color: 0x3fd0ff },
+    aft_bulkhead:          { kind: 'metal',    color: 0x3fd0ff },
+    grain_seg_1:           { kind: 'grain',    color: 0xff8a1e },
+    grain_seg_2:           { kind: 'grain',    color: 0xff8a1e },
+    grain_seg_3:           { kind: 'grain',    color: 0xff8a1e },
+    grain_seg_4:           { kind: 'grain',    color: 0xff8a1e },
+    nozzle_housing:        { kind: 'ablative', color: 0x8a2fe0 },
+    nozzle_throat_insert:  { kind: 'throat',   color: 0xff2d2d },
+    nozzle_cone:           { kind: 'ablative', color: 0x8a2fe0 },
+    nozzle_interface_ring: { kind: 'metal',    color: 0x3fd0ff },
+    nozzle_exit_ring:      { kind: 'metal',    color: 0x3fd0ff },
+    fin_fwd_0: { kind: 'fin', color: 0x00ffb0 }, fin_fwd_1: { kind: 'fin', color: 0x00ffb0 },
+    fin_fwd_2: { kind: 'fin', color: 0x00ffb0 }, fin_fwd_3: { kind: 'fin', color: 0x00ffb0 },
+    fin_aft_0: { kind: 'fin', color: 0x00ffb0 }, fin_aft_1: { kind: 'fin', color: 0x00ffb0 },
+    fin_aft_2: { kind: 'fin', color: 0x00ffb0 }, fin_aft_3: { kind: 'fin', color: 0x00ffb0 },
+    tab_0: { kind: 'metal', color: 0xffd400 }, tab_1: { kind: 'metal', color: 0xffd400 },
+    tab_2: { kind: 'metal', color: 0xffd400 }, tab_3: { kind: 'metal', color: 0xffd400 },
   };
 
   // Labels: anchor = representative mesh name, text = pin label, side = which
@@ -84,34 +84,40 @@ window.ENGINE3D = (() => {
     switch (kind) {
       case 'grain':
         return new THREE.MeshStandardMaterial(Object.assign({}, common, {
-          roughness: 0.92, metalness: 0.0,
-          map: buildNoiseTexture(128, [0xc4, 0x8a, 0x52], 30),
+          roughness: 0.85, metalness: 0.0,
+          emissive: colorHex, emissiveIntensity: 0.35,
+          map: buildNoiseTexture(128, [0xd0, 0xd0, 0xd0], 30),
           bumpMap: buildNoiseTexture(128, [128,128,128], 60),
           bumpScale: 0.0008,
         }));
       case 'shell':
         return new THREE.MeshStandardMaterial(Object.assign({}, common, {
-          roughness: 0.38, metalness: 0.6,
-          map: buildNoiseTexture(128, [0x3c, 0x4a, 0x34], 14, { streaks: true }),
+          roughness: 0.32, metalness: 0.6,
+          emissive: colorHex, emissiveIntensity: 0.12,
+          map: buildNoiseTexture(128, [0xc8, 0xc8, 0xc8], 14, { streaks: true }),
         }));
       case 'ablative':
         return new THREE.MeshStandardMaterial(Object.assign({}, common, {
-          roughness: 0.6, metalness: 0.25,
-          map: buildNoiseTexture(128, [0x1c, 0x17, 0x14], 18),
+          roughness: 0.55, metalness: 0.25,
+          emissive: colorHex, emissiveIntensity: 0.18,
+          map: buildNoiseTexture(128, [0xb0, 0xb0, 0xb0], 18),
         }));
       case 'throat':
         return new THREE.MeshStandardMaterial(Object.assign({}, common, {
-          roughness: 0.5, metalness: 0.35,
-          map: buildNoiseTexture(96, [0x8a, 0x30, 0x16], 22),
+          roughness: 0.45, metalness: 0.35,
+          emissive: colorHex, emissiveIntensity: 0.55,
+          map: buildNoiseTexture(96, [0xd8, 0xd8, 0xd8], 22),
         }));
       case 'fin':
         return new THREE.MeshStandardMaterial(Object.assign({}, common, {
-          roughness: 0.28, metalness: 0.85,
+          roughness: 0.25, metalness: 0.85,
+          emissive: colorHex, emissiveIntensity: 0.2,
         }));
       case 'metal':
       default:
         return new THREE.MeshStandardMaterial(Object.assign({}, common, {
-          roughness: 0.32, metalness: 0.8,
+          roughness: 0.3, metalness: 0.8,
+          emissive: colorHex, emissiveIntensity: 0.15,
         }));
     }
   }
@@ -132,7 +138,7 @@ window.ENGINE3D = (() => {
     const fill = new THREE.DirectionalLight(0x8fc4ff, 0.5);
     fill.position.set(-1.2, 0.4, -0.6);
     scene.add(fill);
-    const rim = new THREE.DirectionalLight(0x00ffb0, 0.6);
+    const rim = new THREE.DirectionalLight(0x00ffe0, 1.0);
     rim.position.set(-0.6, 0.8, -1.4);
     scene.add(rim);
 
@@ -190,7 +196,9 @@ window.ENGINE3D = (() => {
     }).filter(a => a.mesh);
 
     loaded = true;
-    if (labelsRoot) buildLabelDom();
+    // Part-name label pins (IGNITER/GRAIN/CASE/NOZZLE/FIN) are disabled —
+    // hidden via CSS (#engineLabels) and skipped here so we don't do the
+    // per-frame projection work for something that's never shown.
   }
 
   function loadModel() {
@@ -209,19 +217,19 @@ window.ENGINE3D = (() => {
   // served over http), still show *something* rather than a blank panel.
   function buildFallback() {
     const grp = new THREE.Group();
-    const caseMat = materialFor('shell', 0x3c4a34);
+    const caseMat = materialFor('shell', 0x00d9ff);
     caseMat.clippingPlanes = [clipPlaneWorld];
     const bodyGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.5, 48, 1, true);
     bodyGeo.rotateZ(Math.PI / 2);
     const body = new THREE.Mesh(bodyGeo, caseMat);
     grp.add(body);
-    const grainMat = materialFor('grain', 0xc48a52);
+    const grainMat = materialFor('grain', 0xff8a1e);
     grainMat.clippingPlanes = [clipPlaneWorld];
     const grainGeo = new THREE.CylinderGeometry(0.075, 0.075, 0.32, 40, 1, true);
     grainGeo.rotateZ(Math.PI / 2);
     grainGeo.translate(-0.02, 0, 0);
     grp.add(new THREE.Mesh(grainGeo, grainMat));
-    const nozzleMat = materialFor('ablative', 0x1c1714);
+    const nozzleMat = materialFor('ablative', 0x8a2fe0);
     nozzleMat.clippingPlanes = [clipPlaneWorld];
     const nozzleGeo = new THREE.ConeGeometry(0.09, 0.16, 40, 1, true);
     nozzleGeo.rotateZ(-Math.PI / 2);
@@ -366,7 +374,6 @@ window.ENGINE3D = (() => {
     clipPlaneWorld.copy(clipPlaneLocal).applyMatrix4(root.matrixWorld);
 
     renderer.render(scene, camera);
-    updateLabels();
   }
 
   return { init, render };
