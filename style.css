@@ -478,6 +478,126 @@ body {
 }
 
 /* ════════════════════════════════════
+   3D / WebGL PANEL STAGES
+   (engine cutaway + aerofoil CFD)
+════════════════════════════════════ */
+.gl-stage {
+  position: relative;
+  width: 100%;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+#engineStage { height: 200px; }
+#aerofoilStage { height: 180px; }
+.gl-stage canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: #030504;
+  border-bottom: none;
+}
+
+/* Engine cutaway label pins */
+.gl-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.gl-leader-svg {
+  position: absolute;
+  top: 0; left: 0;
+  pointer-events: none;
+}
+.gl-leader-line {
+  stroke: rgba(0, 200, 150, 0.7);
+  stroke-width: 1;
+  stroke-dasharray: 2 2;
+}
+.gl-pin-dot {
+  position: absolute;
+  width: 5px; height: 5px;
+  margin: -2.5px 0 0 -2.5px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 4px rgba(0, 200, 150, 0.9);
+}
+.gl-pin-label {
+  position: absolute;
+  transform: translateY(-50%);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  background: rgba(4, 8, 10, 0.72);
+  border: 1px solid rgba(0, 200, 150, 0.35);
+  padding: 2px 5px;
+  white-space: nowrap;
+  max-width: 110px;
+}
+/* Label text is now anchored at a fixed column near each canvas edge and
+   grows inward, so it can never overflow the panel. */
+.gl-pin-left  { transform: translate(0, -50%); text-align: left; }
+.gl-pin-right { transform: translate(-100%, -50%); text-align: right; }
+
+/* Aerofoil CFD overlay (legend, title, AoA, axis) */
+.gl-aero-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  font-family: var(--font-mono);
+  color: var(--text);
+}
+.gl-aero-title {
+  position: absolute;
+  top: 6px; left: 7px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+}
+.gl-aero-aoa {
+  position: absolute;
+  top: 6px; right: 10px;
+  font-size: 8px;
+  color: rgba(200, 216, 232, 0.85);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+  text-align: right;
+  max-width: 46%;
+}
+.gl-aero-legend {
+  position: absolute;
+  bottom: 8px; right: 8px;
+  width: 118px;
+}
+.gl-aero-legend-title {
+  font-size: 7.5px;
+  letter-spacing: 0.05em;
+  color: rgba(200, 216, 232, 0.9);
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+  margin-bottom: 2px;
+  text-align: center;
+}
+.gl-aero-legend-bar {
+  height: 7px;
+  border: 1px solid rgba(0,0,0,0.5);
+  background: linear-gradient(to right,
+    #00008f, #0040ff, #00ffff, #7fff7f, #ffff00, #ff8000, #ff0000, #800000);
+}
+.gl-aero-legend-ticks {
+  display: flex;
+  justify-content: space-between;
+  font-size: 6.5px;
+  color: rgba(200, 216, 232, 0.75);
+  margin-top: 1px;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+}
+.gl-aero-axis {
+  position: absolute;
+  bottom: 8px; left: 8px;
+  opacity: 0.85;
+}
+
+/* ════════════════════════════════════
    TRAJECTORY PANEL (bottom-right)
 ════════════════════════════════════ */
 #trajectory-panel {

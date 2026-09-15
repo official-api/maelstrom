@@ -150,21 +150,26 @@
 
             <!-- Phase 2: Engine Cross-Section -->
             <div id="phase-engine" class="phase-panel">
-              <canvas id="engineCanvas" width="340" height="200"></canvas>
+              <div class="gl-stage" id="engineStage">
+                <canvas id="engineCanvas"></canvas>
+                <div id="engineLabels" class="gl-labels"></div>
+              </div>
               <div class="phase-description" id="engineDesc">
                 <div class="desc-title">SOLID PROPELLANT ROCKET ENGINE</div>
                 <!-- EDITABLE: Engine description below -->
-                <p>MAELSTROM's aft 300mm houses a composite solid-propellant grain — a HTPB/AP/Al formulation delivering high specific impulse with zero pre-launch preparation. The propellant burns from the core outward in a regressive grain pattern, generating a consistent high-thrust impulse that accelerates the round to intercept velocity in under 2 seconds. Nozzle throat and expansion ratio are optimised for sea-level performance.</p>
+                <p>MAELSTROM's aft 300mm houses a composite solid-propellant grain — a HTPB/AP/Al formulation delivering high specific impulse with zero pre-launch preparation. The propellant burns from the core outward in a regressive grain pattern, generating a consistent high-thrust impulse that accelerates the round to intercept velocity in under 2 seconds. Nozzle throat and expansion ratio are optimised for sea-level performance. Model rendered directly from the thrust unit's CAD data, live cutaway.</p>
               </div>
             </div>
 
             <!-- Phase 3: Control Fin Aerofoil -->
             <div id="phase-aerofoil" class="phase-panel">
-              <canvas id="aerofoilCanvas" width="340" height="180"></canvas>
+              <div class="gl-stage" id="aerofoilStage">
+                <canvas id="aerofoilCanvas"></canvas>
+              </div>
               <div class="phase-description" id="aerofoilDesc">
                 <div class="desc-title">ACTIVE CONTROL FIN AEROFOIL</div>
                 <!-- EDITABLE: Aerofoil description below -->
-                <p>Four rectangular all-moving control fins at the aft section provide 3-axis manoeuvring authority. The NACA 0008 symmetric profile minimises drag at supersonic transitions while maintaining sufficient lift for rapid course corrections. Actuated by miniaturised electromechanical servos, they respond within 15ms — enabling the tight pursuit curves needed for a closing, evasive drone cluster.</p>
+                <p>Four rectangular all-moving control fins at the aft section provide 3-axis manoeuvring authority. The NACA 0018 symmetric profile trades some drag for a deeper, stiffer spar box, giving the fin structural margin at high dynamic pressure while retaining sufficient lift for rapid course corrections. Actuated by miniaturised electromechanical servos, they respond within 15ms — enabling the tight pursuit curves needed for a closing, evasive drone cluster.</p>
               </div>
             </div>
 
@@ -212,7 +217,10 @@
 
   <!-- Three.js from CDN -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
   <script src="sim.js"></script>
+  <script src="engine3d.js"></script>
+  <script src="aerofoil3d.js"></script>
   <script src="panels.js"></script>
   <script src="main.js"></script>
 </body>
