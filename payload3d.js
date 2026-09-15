@@ -10,12 +10,22 @@
    direction on the sphere (not a flat 2D cone), each spinning on
    its own random axis and sagging slightly under gravity as it
    flies — driven by a simple per-fragment ballistic integrator.
+   The warhead's own casing (outer body tube + tail sleeve) is built
+   from a ring of curved shell shards rather than one solid mesh, so
+   at the same instant the casing itself blows apart into pieces
+   using the same outward ballistic motion as the small fragments —
+   only bigger, slower, and heavier-looking.
 
    SOFT KILL — the carbon-fibre tow is ejected from the canister as
    a bundle of flexible multi-segment filaments. Each filament is a
    tiny Verlet-integrated rope (point masses + distance constraints,
-   gravity + drag), so the fibres genuinely bend, whip and droop as
-   they deploy instead of flying out as stiff rigid lines.
+   gravity + drag) whose anchor end now travels outward along the
+   same ballistic path as a fragment, instead of staying pinned to
+   the canister — so the whole tow shoots outward like shrapnel,
+   with the rope physics only adding a trailing whip/bend behind
+   that outward motion rather than a downward hang. The canister
+   casing (tube + end cap) is likewise built as a ring of shards
+   that blow apart the same way the hard-kill casing does.
    ═══════════════════════════════════════════════════════════════ */
 
 window.PAYLOAD3D = (() => {
@@ -80,29 +90,97 @@ window.PAYLOAD3D = (() => {
     });
   }
 
+  /* ─── shared casing-shard burst (used by both HARD and SOFT kill) ───
+     Builds a tube/cylinder not as one solid mesh but as a ring of curved
+     shell shards. Pre-burst they sit exactly where the solid piece would
+     be, so the casing reads as intact; once the charge fires they fly
+     outward radially (plus a little axial scatter) using the same
+     dist/drop ballistic shape as the small tungsten fragments, so the
+     casing itself visibly breaks apart rather than just sitting there
+     while fragments/filaments emerge from it. */
+  function buildCaseChunks(count, radius, length, colorHex, matOpts, axialOffset) {
+    axialOffset = axialOffset || 0;
+    const group = new THREE.Group();
+    const mat = metalMat(colorHex, matOpts.roughness, matOpts.metalness, matOpts);
+    const data = [];
+    const sliceAngle = (Math.PI * 2) / count;
+
+    for (let k = 0; k < count; k++) {
+      const thetaStart = k * sliceAngle;
+      // slight under-coverage (0.9) leaves a hairline seam between shards
+      // so the pre-burst tube still reads as a fabricated, riveted casing.
+      const geo = new THREE.CylinderGeometry(radius, radius, length, 5, 1, true, thetaStart, sliceAngle * 0.9);
+      geo.rotateZ(Math.PI / 2); // align tube axis to X, matching the rest of the payload geometry
+      if (axialOffset) geo.translate(axialOffset, 0, 0);
+      const mesh = new THREE.Mesh(geo, mat);
+      group.add(mesh);
+
+      const midAngle = thetaStart + sliceAngle / 2;
+      // Outward burst direction: mostly radial (perpendicular to the tube
+      // axis), with a small random axial component so the shards scatter
+      // rather than fly out in one perfectly flat ring.
+      const dir = new THREE.Vector3(
+        (Math.random() - 0.5) * 0.6,
+        Math.cos(midAngle),
+        Math.sin(midAngle)
+      ).normalize();
+
+      data.push({
+        mesh, dir,
+        speed: 0.6 + Math.random() * 0.7,     // heavier/slower than the small shrapnel fragments
+        spinAxis: randSphereDir(),
+        spinSpeed: 1.4 + Math.random() * 3.2,
+        seed: Math.random() * 10,
+        delay: Math.random() * 0.08,
+      });
+    }
+    return { group, data, mat };
+  }
+
+  function updateCaseChunks(data, local) {
+    for (let i = 0; i < data.length; i++) {
+      const c = data[i];
+      const t = Math.max(0, local - c.delay);
+      const dist = t * c.speed * 1.4;
+      const drop = 0.4 * t * t; // same downward arc as the small fragments, for a consistent look
+      c.mesh.position.set(c.dir.x * dist, c.dir.y * dist - drop, c.dir.z * dist);
+      quat.setFromAxisAngle(c.spinAxis, elapsed * c.spinSpeed + c.seed);
+      c.mesh.quaternion.copy(quat);
+    }
+  }
+
   /* ═════════════════ HARD KILL — fragmentation ═════════════════ */
   const FRAG_COUNT = 90;
+  const CASE_CHUNK_COUNT = 12;
+  const SLEEVE_CHUNK_COUNT = 6;
   let fragMesh, fragData;
+  let bodyChunks, sleeveChunks;
 
   function buildHardKill() {
     const group = new THREE.Group();
 
-    // Residual warhead body (case + explosive core), stays put as the
-    // fragments burst outward from it in every direction.
-    const bodyGeo = new THREE.CylinderGeometry(0.15, 0.15, 0.46, 28, 1, true);
-    bodyGeo.rotateZ(Math.PI / 2);
-    group.add(new THREE.Mesh(bodyGeo, metalMat(0x3a4048, 0.42, 0.7, { noisy: true, base: [0x3a, 0x40, 0x48], variance: 14 })));
-
+    // Explosive core stays put at the centre — only the metal casing
+    // around it blows apart.
     const coreGeo = new THREE.CylinderGeometry(0.085, 0.085, 0.42, 22, 1, true);
     coreGeo.rotateZ(Math.PI / 2);
     group.add(new THREE.Mesh(coreGeo, metalMat(0x7a6a2a, 0.65, 0.05, { noisy: true, base: [0x7a, 0x6a, 0x2a], variance: 26 })));
 
-    // remaining (un-sheared) sleeve stub, so the body still reads as a
-    // fragmentation warhead rather than a bare cylinder
-    const sleeveGeo = new THREE.CylinderGeometry(0.155, 0.155, 0.10, 28, 1, true);
-    sleeveGeo.rotateZ(Math.PI / 2);
-    sleeveGeo.translate(-0.16, 0, 0);
-    group.add(new THREE.Mesh(sleeveGeo, metalMat(0x24242e, 0.55, 0.6)));
+    // Warhead body casing — built as a ring of curved shell shards
+    // (rather than one solid tube) so it can burst apart into pieces
+    // right alongside the fragments it releases.
+    bodyChunks = buildCaseChunks(
+      CASE_CHUNK_COUNT, 0.15, 0.46, 0x3a4048,
+      { noisy: true, base: [0x3a, 0x40, 0x48], variance: 14, transparent: true }
+    );
+    group.add(bodyChunks.group);
+
+    // Tail sleeve — same shard treatment, so the whole casing (body +
+    // sleeve) shears apart together instead of leaving a static stub.
+    sleeveChunks = buildCaseChunks(
+      SLEEVE_CHUNK_COUNT, 0.155, 0.10, 0x24242e,
+      { transparent: true }, -0.16
+    );
+    group.add(sleeveChunks.group);
 
     // Fragments — chunky, angular tungsten-alloy shards, flung out to
     // every point on the sphere, each tumbling on its own random axis.
@@ -153,6 +231,15 @@ window.PAYLOAD3D = (() => {
     }
     fragMesh.instanceMatrix.needsUpdate = true;
 
+    // Casing shards (body + sleeve) burst outward on the same clock as
+    // the fragments, so the whole payload — not just its shrapnel —
+    // visibly blows apart.
+    updateCaseChunks(bodyChunks.data, local);
+    updateCaseChunks(sleeveChunks.data, local);
+    const caseOpacity = local <= 0 ? 1 : Math.max(0.15, 1 - local * 0.7);
+    bodyChunks.mat.opacity = caseOpacity;
+    sleeveChunks.mat.opacity = caseOpacity;
+
     // Detonation flash right as the sleeve shears open
     const win = 0.05;
     if (phase > BURST_AT - 0.01 && phase < BURST_AT + win) {
@@ -170,19 +257,27 @@ window.PAYLOAD3D = (() => {
   const SEG_COUNT = 6; // point masses per fibre -> SEG_COUNT-1 rendered links
   const GRAVITY = -1.1;
   const DAMPING = 0.986;
+  const CAN_CHUNK_COUNT = 12;
+  const CAP_CHUNK_COUNT = 6;
   let fiberMesh, fibers;
+  let canChunks, capChunks;
 
   function buildSoftKill() {
     const group = new THREE.Group();
 
-    const canGeo = new THREE.CylinderGeometry(0.10, 0.10, 0.5, 24, 1, true);
-    canGeo.rotateZ(Math.PI / 2);
-    group.add(new THREE.Mesh(canGeo, metalMat(0x2c3038, 0.35, 0.75, { noisy: true, base: [0x2c, 0x30, 0x38], variance: 10 })));
+    // Canister casing — a ring of shell shards (not one solid tube) so
+    // it bursts apart the same way the hard-kill casing does.
+    canChunks = buildCaseChunks(
+      CAN_CHUNK_COUNT, 0.10, 0.5, 0x2c3038,
+      { noisy: true, base: [0x2c, 0x30, 0x38], variance: 10, transparent: true }
+    );
+    group.add(canChunks.group);
 
-    const capGeo = new THREE.CylinderGeometry(0.105, 0.105, 0.03, 24);
-    capGeo.rotateZ(Math.PI / 2);
-    capGeo.translate(-0.26, 0, 0);
-    group.add(new THREE.Mesh(capGeo, metalMat(0x1c2026, 0.3, 0.8)));
+    capChunks = buildCaseChunks(
+      CAP_CHUNK_COUNT, 0.105, 0.03, 0x1c2026,
+      { transparent: true }, -0.26
+    );
+    group.add(capChunks.group);
 
     // Glossy near-black filament material — carbon fibre tow look.
     const fiberMat = metalMat(0x0a0d10, 0.32, 0.15);
@@ -202,6 +297,8 @@ window.PAYLOAD3D = (() => {
         thickness: 0.0035 + Math.random() * 0.003,
         points, prev,
         released: false,
+        anchor: new THREE.Vector3(), // world-space offset of this fibre's root — travels outward like a fragment
+        delay: Math.random() * 0.1,  // slight stagger so the tow doesn't leave as one flat shell
       });
     }
     group.add(fiberMesh);
@@ -221,6 +318,26 @@ window.PAYLOAD3D = (() => {
     const phase = cycleT / CYCLE;
     const wrapped = cycleT < prevCycle;
     if (wrapped) resetFibers();
+    const local = Math.max(0, (phase - BURST_AT) / (1 - BURST_AT));
+
+    // Canister casing (tube + cap) bursts apart on the same clock as the
+    // hard-kill casing, instead of sitting there as a static shell.
+    updateCaseChunks(canChunks.data, local);
+    updateCaseChunks(capChunks.data, local);
+    const canOpacity = local <= 0 ? 1 : Math.max(0.15, 1 - local * 0.7);
+    canChunks.mat.opacity = canOpacity;
+    capChunks.mat.opacity = canOpacity;
+
+    // Each fibre's root travels outward along the same ballistic path as a
+    // fragment/casing shard (dist + gravity drop) — the Verlet rope below
+    // only adds a trailing whip/bend behind that motion, so the tow shoots
+    // outward instead of hanging straight down off the canister.
+    fibers.forEach(f => {
+      const t = Math.max(0, local - f.delay);
+      const dist = t * f.burstSpeed * 1.7;
+      const drop = 0.4 * t * t;
+      f.anchor.set(f.dir.x * dist, f.dir.y * dist - drop, f.dir.z * dist);
+    });
 
     if (phase >= BURST_AT) {
       if (!fibers[0].released) {
@@ -281,7 +398,14 @@ window.PAYLOAD3D = (() => {
         if (phase < BURST_AT || len < 1e-5) {
           dummy.scale.set(0, 0, 0);
         } else {
-          dummy.position.set((a.x + b.x) * 0.5, (a.y + b.y) * 0.5, (a.z + b.z) * 0.5);
+          // Offset by the fibre's own ballistic anchor so the whole link
+          // rides outward with it — only orientation/length come from the
+          // local rope simulation (the whip), position comes from both.
+          dummy.position.set(
+            (a.x + b.x) * 0.5 + f.anchor.x,
+            (a.y + b.y) * 0.5 + f.anchor.y,
+            (a.z + b.z) * 0.5 + f.anchor.z
+          );
           quat.setFromUnitVectors(yAxis, new THREE.Vector3(dx / len, dy / len, dz / len));
           dummy.quaternion.copy(quat);
           dummy.scale.set(f.thickness, len, f.thickness);
