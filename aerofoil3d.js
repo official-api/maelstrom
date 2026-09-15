@@ -62,14 +62,29 @@ window.AEROFOIL_CFD = (() => {
       return vec2(re, z.y < 0.0 ? -im : im);
     }
 
-    vec3 jet(float t) {
+        // ---- Berlin Perceptually Uniform Diverging Colormap ----
+    vec3 berlin(float t) {
       t = clamp(t, 0.0, 1.0);
-      vec3 c;
-      c.r = clamp(1.5 - abs(4.0 * t - 3.0), 0.0, 1.0);
-      c.g = clamp(1.5 - abs(4.0 * t - 2.0), 0.0, 1.0);
-      c.b = clamp(1.5 - abs(4.0 * t - 1.0), 0.0, 1.0);
-      return c;
+      
+      // Color key nodes for the Berlin map
+      vec3 c0 = vec3(0.61, 0.81, 0.93); // Light Blue / Cyan (Min value)
+      vec3 c1 = vec3(0.24, 0.44, 0.65); // Medium Blue
+      vec3 c2 = vec3(0.09, 0.09, 0.11); // Dark Neutral Center
+      vec3 c3 = vec3(0.70, 0.33, 0.22); // Burnt Orange
+      vec3 c4 = vec3(0.93, 0.72, 0.61); // Light Salmon / Orange (Max value)
+
+      // Interpolate across the segments
+      if (t < 0.25) {
+        return mix(c0, c1, t * 4.0);
+      } else if (t < 0.50) {
+        return mix(c1, c2, (t - 0.25) * 4.0);
+      } else if (t < 0.75) {
+        return mix(c2, c3, (t - 0.50) * 4.0);
+      } else {
+        return mix(c3, c4, (t - 0.75) * 4.0);
+      }
     }
+
 
     void main() {
       // Aspect-corrected plot space, chord = 1, centred at the quarter-chord.
@@ -151,7 +166,7 @@ window.AEROFOIL_CFD = (() => {
       // thickest point — matches the classic red/blue cylinder-flow look.
       float uMag = clamp(speed / 2.0, 0.0, 1.0);
 
-      vec3 col = jet(uMag);
+      vec3 col = berlin(uMag);
 
       // Body: neutral, lightly shaded metal, with a soft rim/spec highlight.
       float edge = smoothstep(halfT - 0.012, halfT, abs(f.y)) * inBody;
