@@ -586,8 +586,9 @@ body {
 .gl-aero-legend-bar {
   height: 7px;
   border: 1px solid rgba(0,0,0,0.5);
+  /* Replaced jet/rainbow gradient with Crameri Berlin diverging colormap */
   background: linear-gradient(to right,
-    #00008f, #0040ff, #00ffff, #7fff7f, #ffff00, #ff8000, #ff0000, #800000);
+    #1b3252, #39648f, #6d9ec4, #b4d3e3, #e5ded5, #dda38f, #bd5654, #6b0c26);
 }
 .gl-aero-legend-ticks {
   display: flex;
