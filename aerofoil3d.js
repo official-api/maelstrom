@@ -178,9 +178,9 @@ window.AEROFOIL_CFD = (() => {
 
       // Subtle background vignette so the panel doesn't look flat/empty
       // outside the flow field, echoing the reference image's khaki field.
-      vec3 farField = vec3(0.55, 0.62, 0.30);
-      float farBlend = smoothstep(1.0, 2.2, length(p));
-      col = mix(col, farField, farBlend * 0.35);
+      // vec3 farField = vec3(0.55, 0.62, 0.30);
+      // float farBlend = smoothstep(1.0, 2.2, length(p));
+      // col = mix(col, farField, farBlend * 0.35);
 
       gl_FragColor = vec4(col, 1.0);
     }
