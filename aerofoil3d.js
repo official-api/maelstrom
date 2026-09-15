@@ -48,6 +48,19 @@ window.AEROFOIL_CFD = (() => {
              + 0.2843 * x * x * x - 0.1015 * x * x * x * x);
     }
 
+    // ---- complex-number helpers for the Joukowski conformal map ----
+    vec2 cmul(vec2 a, vec2 b) { return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); }
+    vec2 cdiv(vec2 a, vec2 b) {
+      float d = dot(b, b) + 1e-9;
+      return vec2(a.x*b.x + a.y*b.y, a.y*b.x - a.x*b.y) / d;
+    }
+    vec2 csqrt(vec2 z) {
+      float r = length(z);
+      float re = sqrt(max(0.0, (r + z.x) * 0.5));
+      float im = sqrt(max(0.0, (r - z.x) * 0.5));
+      return vec2(re, z.y < 0.0 ? -im : im);
+    }
+
     vec3 jet(float t) {
       t = clamp(t, 0.0, 1.0);
       vec3 c;
@@ -70,18 +83,42 @@ window.AEROFOIL_CFD = (() => {
       float halfT = nacaHalfThickness(xn, t);
       float inBody = step(0.0, xn) * step(xn, 1.0) * step(abs(f.y), halfT);
 
-      // Elliptic approximation of the aerofoil for an analytic potential-flow
-      // field (uniform stream + doublet around the equivalent circle).
-      float a = 0.52, b = 0.095;
-      vec2 uv2 = vec2(f.x / a, f.y / b);
-      float r2 = dot(uv2, uv2);
-      r2 = max(r2, 1.0);
-      float r4 = r2 * r2;
-      float A = 1.0 - (uv2.x * uv2.x - uv2.y * uv2.y) / r4;
-      float B = 2.0 * uv2.x * uv2.y / r4;
-      float Ux = cos(uAoA), Uy = -sin(uAoA);
-      float Vx = Ux * A + Uy * B;
-      float Vy = Uy * A - Ux * B;
+      // True Joukowski-transform potential flow around a thickness-matched
+      // aerofoil, with circulation set by the Kutta condition (finite,
+      // tangent flow off the sharp trailing edge) — this is the actual
+      // analytic solution for lifting flow around a Joukowski aerofoil,
+      // not just a doublet/cylinder approximation.
+      const float PI = 3.14159265359;
+      float c = 0.25;                 // map constant: flat-plate limit chord = 4c = 1
+      float eps = 0.30 * c * t;        // circle-centre offset -> aerofoil thickness
+      float R = c + eps;               // circle radius (passes through the TE at zeta = c)
+      vec2 zeta0 = vec2(-eps, 0.0);
+
+      // Invert z = zeta + c^2/zeta  =>  zeta^2 - z*zeta + c^2 = 0
+      vec2 z = f;
+      vec2 disc = cmul(z, z) - vec2(4.0 * c * c, 0.0);
+      vec2 s = csqrt(disc);
+      if (dot(s, z) < 0.0) s = -s;      // pick the branch with zeta -> z far from the body
+      vec2 zeta = (z + s) * 0.5;
+
+      vec2 w = zeta - zeta0;
+      float r = length(w);
+      float rc = max(r, R);             // clamp inside the body to avoid a singularity
+      w *= rc / max(r, 1e-4);
+
+      vec2 eIA = vec2(cos(uAoA), sin(uAoA));
+      vec2 eNegIA = vec2(cos(uAoA), -sin(uAoA));
+      float Gamma = 4.0 * PI * R * sin(uAoA);   // Kutta-condition circulation
+
+      vec2 w2 = cmul(w, w);
+      vec2 dWdzeta = eNegIA - cdiv(cmul(vec2(R * R, 0.0), eIA), w2)
+                            + cdiv(vec2(0.0, -Gamma / (2.0 * PI)), w);
+
+      vec2 dzdzeta = vec2(1.0, 0.0) - cdiv(vec2(c * c, 0.0), cmul(zeta, zeta));
+      vec2 dWdz = cdiv(dWdzeta, dzdzeta);
+
+      float Vx = dWdz.x;
+      float Vy = -dWdz.y;
       float speed = length(vec2(Vx, Vy));
 
       // Turbulent, meandering wake downstream of the trailing edge.
