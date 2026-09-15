@@ -489,6 +489,7 @@ body {
 }
 #engineStage { height: 200px; }
 #aerofoilStage { height: 180px; }
+#payloadStage { height: 200px; }
 .gl-stage canvas {
   width: 100%;
   height: 100%;
@@ -595,6 +596,27 @@ body {
   position: absolute;
   bottom: 8px; left: 8px;
   opacity: 0.85;
+}
+
+/* Payload viewport overlay (kill-mode title + effect readout) */
+.gl-payload-ui {
+  position: absolute;
+  left: 7px;
+  font-family: var(--font-mono);
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgba(0,0,0,0.85);
+}
+.gl-payload-title {
+  top: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.gl-payload-info {
+  top: 21px;
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  color: rgba(200, 216, 232, 0.85);
 }
 
 /* ════════════════════════════════════

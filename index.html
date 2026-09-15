@@ -185,7 +185,10 @@
 
             <!-- Phase 5: Payload Deploy -->
             <div id="phase-payload" class="phase-panel">
-              <canvas id="payloadCanvas" width="340" height="200"></canvas>
+              <div class="gl-stage" id="payloadStage">
+                <canvas id="payloadCanvas"></canvas>
+                <div id="payloadLabels" class="gl-labels"></div>
+              </div>
               <div class="phase-description" id="payloadDesc">
                 <div class="desc-title" id="payloadTitle">WARHEAD DEPLOYMENT</div>
                 <!-- EDITABLE: Payload description below — updated dynamically -->
@@ -221,6 +224,7 @@
   <script src="sim.js"></script>
   <script src="engine3d.js"></script>
   <script src="aerofoil3d.js"></script>
+  <script src="payload3d.js"></script>
   <script src="panels.js"></script>
   <script src="main.js"></script>
 </body>
