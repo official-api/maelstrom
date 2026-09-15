@@ -240,6 +240,17 @@ const SIM = (() => {
         uCameraPos:   { value: new THREE.Vector3() },
         uGroundLevel: { value: SKY_GROUND_LEVEL },
         uEyeHeight:   { value: SKY_EYE_HEIGHT },
+        // The ground-plane reprojection below only makes sense when the
+        // camera is near ground level (its whole premise is "re-photograph
+        // the ground from a fixed human eye-height"). The drone/intercept
+        // camera modes fly up to y≈80-90, where camera height and the fixed
+        // eye-height diverge wildly — the reprojected texture visibly warps
+        // and swims every frame as the camera moves. Fade the reprojection
+        // out smoothly above this altitude and fall back to plain,
+        // non-reprojected equirect sampling (which never warps, since it
+        // depends only on view direction, not camera position).
+        uAltFadeStart: { value: 18.0 },
+        uAltFadeEnd:   { value: 45.0 },
       },
       vertexShader: `
         varying vec3 vWorldPosition;
@@ -253,6 +264,8 @@ const SIM = (() => {
         uniform vec3 uCameraPos;
         uniform float uGroundLevel;
         uniform float uEyeHeight;
+        uniform float uAltFadeStart;
+        uniform float uAltFadeEnd;
         varying vec3 vWorldPosition;
 
         const float PI2 = 6.28318530718;
@@ -268,16 +281,29 @@ const SIM = (() => {
           vec3 dir = normalize(vWorldPosition - uCameraPos);
           vec3 sampleDir = dir;
 
-          if (dir.y < -0.0005) {
+          // How much of the ground-reprojection trick to apply, based on how
+          // high the camera currently is above the ground. 1 = full reprojection
+          // (camera near ground, the intended use case), 0 = none (camera high
+          // above the ground, e.g. following the drone swarm) so we fall back
+          // to a plain, warp-free equirect sample.
+          float camHeight = uCameraPos.y - uGroundLevel;
+          float reprojBlend = 1.0 - smoothstep(uAltFadeStart, uAltFadeEnd, camHeight);
+
+          if (dir.y < -0.0005 && reprojBlend > 0.001) {
             // Where this view ray actually meets our real ground plane.
             float t = (uGroundLevel - uCameraPos.y) / dir.y;
+            // Guard against runaway distances at grazing angles / high altitude,
+            // which would otherwise sample far outside the intended geometry
+            // and show up as texture swimming.
+            t = min(t, 4000.0);
             vec3 hit = uCameraPos + dir * t;
             // Re-project that ground point from a fixed eye-height directly
             // above the camera's own footprint, so the panorama's ground
             // recedes toward the horizon with correct, camera-relative
             // parallax instead of behaving like a texture stuck to the sky.
             vec3 projOrigin = vec3(uCameraPos.x, uGroundLevel + uEyeHeight, uCameraPos.z);
-            sampleDir = normalize(hit - projOrigin);
+            vec3 reprojDir = normalize(hit - projOrigin);
+            sampleDir = normalize(mix(dir, reprojDir, reprojBlend));
           }
 
           vec2 uv = equirectUv(sampleDir);
@@ -360,6 +386,30 @@ const SIM = (() => {
     return tex;
   }
 
+  // Procedural radial alpha mask (white centre -> transparent edge) so the
+  // finite textured ground plane fades out into the grounded skybox's own
+  // reprojected "ground" instead of ending in a hard, obviously-visible
+  // rectangular/circular boundary. Sampled with the plane's un-tiled 0..1
+  // UVs (same set used for aoMap), so it spans the whole plane exactly once
+  // regardless of the diffuse/normal/rough textures' own repeat counts.
+  function buildGroundFadeTexture() {
+    const size = 512;
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    const cx = size / 2, cy = size / 2;
+    const grad = ctx.createRadialGradient(cx, cy, size * 0.30, cx, cy, size * 0.5);
+    grad.addColorStop(0.0, 'rgba(255,255,255,1)');
+    grad.addColorStop(0.55, 'rgba(255,255,255,1)');
+    grad.addColorStop(1.0, 'rgba(255,255,255,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    return tex;
+  }
+
   function buildGround() {
     const loader = new THREE.TextureLoader();
     loader.crossOrigin = 'anonymous';
@@ -403,6 +453,11 @@ const SIM = (() => {
       displacementBias: -0.12,
       roughness: 1.0,
       metalness: 0.0,
+      // Radial fade so the plane's edge dissolves into the skybox's own
+      // ground illusion instead of showing a hard boundary line.
+      alphaMap: buildGroundFadeTexture(),
+      transparent: true,
+      alphaTest: 0.0,
     });
     ground = new THREE.Mesh(groundGeo, groundMat);
     ground.rotation.x = -Math.PI / 2;
