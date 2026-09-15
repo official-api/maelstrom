@@ -50,6 +50,7 @@ window.AEROFOIL_CFD = (() => {
 
     // ---- complex-number helpers for the Joukowski conformal map ----
     vec2 cmul(vec2 a, vec2 b) { return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x); }
+    vec2 cconj(vec2 a) { return vec2(a.x, -a.y); }
     vec2 cdiv(vec2 a, vec2 b) {
       float d = dot(b, b) + 1e-9;
       return vec2(a.x*b.x + a.y*b.y, a.y*b.x - a.x*b.y) / d;
@@ -115,15 +116,28 @@ window.AEROFOIL_CFD = (() => {
                             + cdiv(vec2(0.0, -Gamma / (2.0 * PI)), w);
 
       vec2 dzdzeta = vec2(1.0, 0.0) - cdiv(vec2(c * c, 0.0), cmul(zeta, zeta));
-      vec2 dWdz = cdiv(dWdzeta, dzdzeta);
+
+      // Both dWdzeta and dzdzeta analytically vanish together at the Kutta
+      // point (zeta = c, the trailing-edge cusp) -- that cancellation is
+      // exactly what makes the trailing-edge flow smooth. But computing it
+      // as a literal 0/0 in floating point is numerically unstable right
+      // at that point, producing a spurious speed spike. Regularise the
+      // divisor with a small floor tied to distance from the cusp so the
+      // ratio settles to its true finite limit instead of blowing up.
+      float distToCusp = length(zeta - vec2(c, 0.0));
+      float denomMag2 = max(dot(dzdzeta, dzdzeta), 4e-4 * smoothstep(0.05, 0.0, distToCusp));
+      vec2 dWdz = cmul(dWdzeta, cconj(dzdzeta)) / denomMag2;
 
       float Vx = dWdz.x;
       float Vy = -dWdz.y;
       float speed = length(vec2(Vx, Vy));
+      // Soft-saturate instead of hard clamp so any residual noise near the
+      // cusp compresses smoothly rather than spiking to full red.
+      speed = speed / sqrt(1.0 + (speed * speed) / 12.25);
 
       // Turbulent, meandering wake downstream of the trailing edge.
       float wakeX = f.x - 0.5;
-      float wakeOn = step(0.0, wakeX);
+      float wakeOn = smoothstep(-0.015, 0.015, wakeX); // feathered, not a hard step
       float meander = 0.05 * sin(wakeX * 5.0 - uTime * 2.2) * smoothstep(0.0, 0.5, wakeX)
                      + (fbm(vec2(wakeX * 3.0, uTime * 0.6)) - 0.5) * 0.10 * smoothstep(0.0, 1.2, wakeX);
       float wakeWidth = 0.05 + 0.16 * wakeX;
