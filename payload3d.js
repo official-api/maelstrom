@@ -70,6 +70,10 @@ window.PAYLOAD3D = (() => {
     const params = { color, roughness, metalness, side: THREE.DoubleSide };
     if (opts.noisy) params.map = buildNoiseTexture(96, opts.base || [color >> 16 & 255, color >> 8 & 255, color & 255], opts.variance || 16);
     if (opts.transparent) { params.transparent = true; params.opacity = 1; }
+    if (opts.emissive !== undefined) {
+      params.emissive = opts.emissive;
+      params.emissiveIntensity = opts.emissiveIntensity !== undefined ? opts.emissiveIntensity : 0.4;
+    }
     return new THREE.MeshStandardMaterial(params);
   }
 
@@ -163,21 +167,21 @@ window.PAYLOAD3D = (() => {
     // around it blows apart.
     const coreGeo = new THREE.CylinderGeometry(0.085, 0.085, 0.42, 22, 1, true);
     coreGeo.rotateZ(Math.PI / 2);
-    group.add(new THREE.Mesh(coreGeo, metalMat(0x7a6a2a, 0.65, 0.05, { noisy: true, base: [0x7a, 0x6a, 0x2a], variance: 26 })));
+    group.add(new THREE.Mesh(coreGeo, metalMat(0xffb020, 0.65, 0.05, { noisy: true, base: [0xd8, 0xd8, 0xd8], variance: 26 })));
 
     // Warhead body casing — built as a ring of curved shell shards
     // (rather than one solid tube) so it can burst apart into pieces
     // right alongside the fragments it releases.
     bodyChunks = buildCaseChunks(
-      CASE_CHUNK_COUNT, 0.15, 0.46, 0x3a4048,
-      { noisy: true, base: [0x3a, 0x40, 0x48], variance: 14, transparent: true }
+      CASE_CHUNK_COUNT, 0.15, 0.46, 0xff3300,
+      { noisy: true, base: [0xd8, 0xd8, 0xd8], variance: 14, transparent: true }
     );
     group.add(bodyChunks.group);
 
     // Tail sleeve — same shard treatment, so the whole casing (body +
     // sleeve) shears apart together instead of leaving a static stub.
     sleeveChunks = buildCaseChunks(
-      SLEEVE_CHUNK_COUNT, 0.155, 0.10, 0x24242e,
+      SLEEVE_CHUNK_COUNT, 0.155, 0.10, 0xff6a00,
       { transparent: true }, -0.16
     );
     group.add(sleeveChunks.group);
@@ -185,7 +189,7 @@ window.PAYLOAD3D = (() => {
     // Fragments — chunky, angular tungsten-alloy shards, flung out to
     // every point on the sphere, each tumbling on its own random axis.
     const fragGeo = new THREE.IcosahedronGeometry(1, 0);
-    const fragMat = metalMat(0xb9b6ad, 0.55, 0.65, { transparent: true });
+    const fragMat = metalMat(0xffa030, 0.55, 0.65, { transparent: true, emissive: 0xff5500, emissiveIntensity: 0.5 });
     fragMesh = new THREE.InstancedMesh(fragGeo, fragMat, FRAG_COUNT);
 
     const col = new THREE.Color();
@@ -201,8 +205,8 @@ window.PAYLOAD3D = (() => {
         seed: Math.random() * 10,
         delay: Math.random() * 0.12, // slight stagger so the burst isn't a perfect sphere shell
       });
-      const shade = 0.72 + Math.random() * 0.4;
-      col.setRGB(0.68 * shade, 0.66 * shade, 0.62 * shade);
+      const shade = 0.8 + Math.random() * 0.4;
+      col.setRGB(1.0 * shade, 0.55 * shade, 0.12 * shade);
       fragMesh.setColorAt(i, col);
     }
     group.add(fragMesh);
@@ -243,8 +247,8 @@ window.PAYLOAD3D = (() => {
     // Detonation flash right as the sleeve shears open
     const win = 0.05;
     if (phase > BURST_AT - 0.01 && phase < BURST_AT + win) {
-      flashLight.intensity = Math.max(0, 1 - (phase - (BURST_AT - 0.01)) / (win + 0.01)) * 7;
-      flashLight.color.setHex(0xffb060);
+      flashLight.intensity = Math.max(0, 1 - (phase - (BURST_AT - 0.01)) / (win + 0.01)) * 8.5;
+      flashLight.color.setHex(0xff5500);
     } else {
       flashLight.intensity = 0;
     }
@@ -268,19 +272,21 @@ window.PAYLOAD3D = (() => {
     // Canister casing — a ring of shell shards (not one solid tube) so
     // it bursts apart the same way the hard-kill casing does.
     canChunks = buildCaseChunks(
-      CAN_CHUNK_COUNT, 0.10, 0.5, 0x2c3038,
-      { noisy: true, base: [0x2c, 0x30, 0x38], variance: 10, transparent: true }
+      CAN_CHUNK_COUNT, 0.10, 0.5, 0x1560ff,
+      { noisy: true, base: [0xd8, 0xd8, 0xd8], variance: 10, transparent: true }
     );
     group.add(canChunks.group);
 
     capChunks = buildCaseChunks(
-      CAP_CHUNK_COUNT, 0.105, 0.03, 0x1c2026,
+      CAP_CHUNK_COUNT, 0.105, 0.03, 0x7a2aff,
       { transparent: true }, -0.26
     );
     group.add(capChunks.group);
 
-    // Glossy near-black filament material — carbon fibre tow look.
-    const fiberMat = metalMat(0x0a0d10, 0.32, 0.15);
+    // Glossy filament material — carbon fibre tow look, now a vibrant
+    // glowing cyan so it reads clearly against the dark stage instead
+    // of disappearing like the original near-black finish did.
+    const fiberMat = metalMat(0x00e5ff, 0.32, 0.35, { emissive: 0x00c8ff, emissiveIntensity: 0.65 });
     const linkGeo = new THREE.CylinderGeometry(1, 1, 1, 6, 1, true); // unit cylinder, scaled per-instance
     const totalLinks = FIBER_COUNT * (SEG_COUNT - 1);
     fiberMesh = new THREE.InstancedMesh(linkGeo, fiberMat, totalLinks);
@@ -420,8 +426,8 @@ window.PAYLOAD3D = (() => {
     // Pyro ejection-charge flash
     const win = 0.05;
     if (phase > BURST_AT - 0.01 && phase < BURST_AT + win) {
-      flashLight.intensity = Math.max(0, 1 - (phase - (BURST_AT - 0.01)) / (win + 0.01)) * 5.5;
-      flashLight.color.setHex(0xffe0a0);
+      flashLight.intensity = Math.max(0, 1 - (phase - (BURST_AT - 0.01)) / (win + 0.01)) * 6.5;
+      flashLight.color.setHex(0x40e0ff);
     } else {
       flashLight.intensity = 0;
     }
@@ -478,11 +484,11 @@ window.PAYLOAD3D = (() => {
     if (!titleEl) return;
     if (m === 'hard') {
       titleEl.textContent = 'HARD KILL — FRAG WARHEAD';
-      titleEl.style.color = '#ff6a4a';
+      titleEl.style.color = '#ff5500';
       infoEl.textContent = 'R_KILL: 15m   V_FRAG: >400 m/s   FUZE: PROX+IMPACT';
     } else {
       titleEl.textContent = 'SOFT KILL — CARBON FIBRE BURST';
-      titleEl.style.color = '#4ab0ff';
+      titleEl.style.color = '#00e5ff';
       infoEl.textContent = 'R_EFFECT: 20m   ENTANGLEMENT + ROTOR JAM + SHORTS';
     }
   }
