@@ -13,10 +13,20 @@
     <!-- Header Bar -->
     <header id="header">
       <div class="header-left">
-        <div class="logo-mark">M</div>
+        <div class="logo-mark">
+          <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+            <path d="M32 3 L56 13 V33 C56 48 46 57 32 61 C18 57 8 48 8 33 V13 Z" fill="none" stroke="var(--accent)" stroke-width="2.5"/>
+            <path d="M20 45 C20 35 44 35 44 25 C44 19 38 16 33 18" fill="none" stroke="var(--accent2)" stroke-width="2.5" stroke-linecap="round"/>
+            <path d="M33 18 L38 9 L42 19 L36 23 Z" fill="var(--accent2)"/>
+            <circle cx="16" cy="16" r="1.6" fill="var(--accent2)"/>
+            <circle cx="48" cy="16" r="1.6" fill="var(--accent2)"/>
+            <circle cx="14" cy="34" r="1.6" fill="var(--accent2)"/>
+            <circle cx="50" cy="34" r="1.6" fill="var(--accent2)"/>
+          </svg>
+        </div>
         <div class="header-titles">
           <span class="title-main">MAELSTROM</span>
-          <span class="title-sub">DIGITAL TWIN SIMULATION v1.0</span>
+          <span class="title-sub">ANTI-SWARM MICRO-MISSILE — DIGITAL TWIN v1.0</span>
         </div>
       </div>
       <div class="header-center">
@@ -41,7 +51,17 @@
              terrain texture assets have finished downloading, so the scene
              never pops in bit-by-bit. -->
         <div id="loadingOverlay">
-          <div class="loading-mark">M</div>
+          <div class="loading-mark">
+            <svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">
+              <path d="M32 3 L56 13 V33 C56 48 46 57 32 61 C18 57 8 48 8 33 V13 Z" fill="none" stroke="var(--accent)" stroke-width="2.5"/>
+              <path d="M20 45 C20 35 44 35 44 25 C44 19 38 16 33 18" fill="none" stroke="var(--accent2)" stroke-width="2.5" stroke-linecap="round"/>
+              <path d="M33 18 L38 9 L42 19 L36 23 Z" fill="var(--accent2)"/>
+              <circle cx="16" cy="16" r="1.6" fill="var(--accent2)"/>
+              <circle cx="48" cy="16" r="1.6" fill="var(--accent2)"/>
+              <circle cx="14" cy="34" r="1.6" fill="var(--accent2)"/>
+              <circle cx="50" cy="34" r="1.6" fill="var(--accent2)"/>
+            </svg>
+          </div>
           <div class="loading-title">INITIALISING DIGITAL TWIN</div>
           <div class="loading-bar-track"><div class="loading-bar-fill" id="loadingBarFill"></div></div>
           <div class="loading-sub" id="loadingSubText">LOADING TERRAIN &amp; SKY ASSETS…</div>
@@ -78,7 +98,7 @@
         </div>
         <!-- Alert Banner -->
         <div id="alertBanner" class="hidden">
-          <span id="alertText">⚠ DRONE SWARM DETECTED — RADAR CONTACT CONFIRMED</span>
+          <span id="alertText">⚠ DRONE CLUSTER DETECTED — GCS TRACKING CONFIRMED</span>
         </div>
         <!-- Cost Comparison Overlay -->
         <div id="costOverlay" class="hidden">
@@ -86,24 +106,24 @@
             <div class="cost-title">ENGAGEMENT COST ANALYSIS</div>
             <div class="cost-grid">
               <div class="cost-item threat">
-                <div class="cost-label">FPV DRONE UNIT COST</div>
-                <div class="cost-value red">$800</div>
-                <div class="cost-note">per military FPV drone</div>
+                <div class="cost-label">GROUP 1-2 UAS UNIT COST</div>
+                <div class="cost-value red">$1,000</div>
+                <div class="cost-note">per disposable swarm drone</div>
               </div>
               <div class="cost-item conventional">
-                <div class="cost-label">PATRIOT INTERCEPTOR</div>
-                <div class="cost-value red">$3,400,000</div>
-                <div class="cost-note">per conventional missile — 1 drone killed</div>
+                <div class="cost-label">CONVENTIONAL INTERCEPTOR</div>
+                <div class="cost-value red">$1,000,000+</div>
+                <div class="cost-note">per missile — one round, one drone</div>
               </div>
               <div class="cost-item maelstrom">
                 <div class="cost-label">MAELSTROM ROUND</div>
-                <div class="cost-value green">$8,000</div>
-                <div class="cost-note">per micro-missile — entire swarm neutralised</div>
+                <div class="cost-value green">&lt;$10,000</div>
+                <div class="cost-note">per micro-missile — entire cluster neutralised</div>
               </div>
             </div>
             <div class="cost-ratio">
-              <span class="ratio-label">COST EFFECTIVENESS RATIO</span>
-              <span class="ratio-value">425× MORE COST-EFFECTIVE</span>
+              <span class="ratio-label">ENGAGEMENT RATIO</span>
+              <span class="ratio-value">1:N — ONE ROUND, WHOLE CLUSTER</span>
             </div>
             <button id="replayBtn2" class="btn-replay">↺ REPLAY SIMULATION</button>
           </div>
@@ -120,13 +140,13 @@
             <div id="phase-standby" class="phase-panel active">
               <div class="mission-brief">
                 <div class="brief-title">MISSION BRIEF</div>
-                <p class="brief-text">MAELSTROM is a solid-propellant rocket micro-missile designed to neutralise drone swarms with a single round. Radar-guided, optically-tracked, and capable of both hard-kill and soft-kill effects.</p>
+                <p class="brief-text">MAELSTROM is a solid-propellant micro-missile, targeted unit cost below $10,000, that closes on a drone cluster in seconds and neutralises it with a single wide-area hard-kill or soft-kill effect — one inexpensive round doing the work that today takes one interceptor per drone.</p>
               </div>
               <div class="spec-grid">
-                <div class="spec-item"><span class="spec-label">LENGTH</span><span class="spec-value">840 mm</span></div>
-                <div class="spec-item"><span class="spec-label">NOSE RADIUS</span><span class="spec-value">45 mm</span></div>
+                <div class="spec-item"><span class="spec-label">CLOSING SPEED</span><span class="spec-value">220-280 m/s</span></div>
+                <div class="spec-item"><span class="spec-label">2km INTERCEPT</span><span class="spec-value">~8 s</span></div>
                 <div class="spec-item"><span class="spec-label">ENGINE</span><span class="spec-value">Solid Prop.</span></div>
-                <div class="spec-item"><span class="spec-label">FINS</span><span class="spec-value">4+4 Config</span></div>
+                <div class="spec-item"><span class="spec-label">EFFECT RADIUS</span><span class="spec-value">10-15 m</span></div>
               </div>
               <button id="beginAttackBtn" class="btn-primary pulse">▶ BEGIN ATTACK SIMULATION</button>
               <button id="replayBtn" class="btn-secondary hidden">↺ REPLAY</button>
@@ -135,16 +155,16 @@
             <!-- Phase 1: Kill Mode Selection -->
             <div id="phase-killmode" class="phase-panel">
               <div class="alert-header">⚠ THREAT DETECTED</div>
-              <p class="phase-desc">Drone swarm identified at <strong>320m</strong>. Select intercept method:</p>
+              <p class="phase-desc">Drone cluster identified at <strong>320m</strong>. Select intercept method:</p>
               <button id="hardKillBtn" class="btn-kill hard">
                 <div class="kill-icon"></div>
                 <div class="kill-label">HARD KILL</div>
-                <div class="kill-desc">Controlled fragmentation warhead — kinetic destruction</div>
+                <div class="kill-desc">Controlled fragmentation — one-to-many kinetic area effect</div>
               </button>
               <button id="softKillBtn" class="btn-kill soft">
                 <div class="kill-icon"></div>
                 <div class="kill-label">SOFT KILL</div>
-                <div class="kill-desc">Carbon fibre burst — entanglement & motor kill</div>
+                <div class="kill-desc">High-power microwave pulse — zero-collateral area effect</div>
               </button>
             </div>
 
@@ -155,9 +175,9 @@
                 <div id="engineLabels" class="gl-labels"></div>
               </div>
               <div class="phase-description" id="engineDesc">
-                <div class="desc-title">SOLID PROPELLANT ROCKET ENGINE</div>
+                <div class="desc-title">SOLID-PROPELLANT ROCKET MOTOR</div>
                 <!-- EDITABLE: Engine description below -->
-                <p>MAELSTROM's aft 300mm houses a composite solid-propellant grain — a HTPB/AP/Al formulation delivering high specific impulse with zero pre-launch preparation. The propellant burns from the core outward in a regressive grain pattern, generating a consistent high-thrust impulse that accelerates the round to intercept velocity in under 2 seconds. Nozzle throat and expansion ratio are optimised for sea-level performance. Model rendered directly from the thrust unit's CAD data, live cutaway.</p>
+                <p>A COTS solid-propellant grain with electrical squib ignition sits in a modular canister at MAELSTROM's aft section. It's a rocket, not a drone: the cost and weight budget goes into motor, nozzle, and warhead rather than batteries and flight electronics. This delivers a high-subsonic/transonic closing speed of 220-280 m/s (Mach 0.65-0.85), covering a 2km intercept in roughly 8 seconds — collapsing time-to-intercept well below propeller-driven interceptors. Model rendered directly from the thrust unit's CAD data, live cutaway.</p>
               </div>
             </div>
 
@@ -167,9 +187,9 @@
                 <canvas id="aerofoilCanvas"></canvas>
               </div>
               <div class="phase-description" id="aerofoilDesc">
-                <div class="desc-title">ACTIVE CONTROL FIN AEROFOIL</div>
+                <div class="desc-title">ACTUATED CONTROL FINS</div>
                 <!-- EDITABLE: Aerofoil description below -->
-                <p>Four rectangular all-moving control fins at the aft section provide 3-axis manoeuvring authority. The NACA 0018 symmetric profile trades some drag for a deeper, stiffer spar box, giving the fin structural margin at high dynamic pressure while retaining sufficient lift for rapid course corrections. Actuated by miniaturised electromechanical servos, they respond within 15ms — enabling the tight pursuit curves needed for a closing, evasive drone cluster.</p>
+                <p>Four rectangular all-moving control fins on the Motor & Actuated Fins section provide 3-axis manoeuvring authority, steered by real-time corrections from the terminal guidance system toward the cluster's geometric centre. Miniaturised electromechanical servos give the round the tight pursuit curves needed to close on a fast-arriving, splitting drone cluster before it reaches a weapon-release line.</p>
               </div>
             </div>
 
@@ -177,9 +197,9 @@
             <div id="phase-tracking" class="phase-panel">
               <canvas id="trackingCanvas" width="340" height="200"></canvas>
               <div class="phase-description" id="trackingDesc">
-                <div class="desc-title">OPTICAL TRACKING & GUIDANCE</div>
+                <div class="desc-title">EO/IR TERMINAL GUIDANCE</div>
                 <!-- EDITABLE: Tracking description below -->
-                <p>An onboard LWIR sensor feeds a lightweight convolutional neural network running at 120fps on an edge TPU. Each drone is detected and assigned a bounding box; the centroid of the cluster bounding box becomes the aim point. Proportional navigation guidance drives the control fins to null the line-of-sight rate, ensuring impact at the geometric centre of the swarm for maximum coverage.</p>
+                <p>A dual-band micro-camera feed is processed on onboard edge compute using DBSCAN clustering to fuse the whole drone cluster into a single aim point at its geometric centre, rather than locking onto one target. This prevents individual-target over-fixation and maximises multi-kill probability. The same sensor doubles as a proximity trigger, firing the hard-kill or soft-kill effector once in range.</p>
               </div>
             </div>
 
@@ -190,9 +210,9 @@
                 <div id="payloadLabels" class="gl-labels"></div>
               </div>
               <div class="phase-description" id="payloadDesc">
-                <div class="desc-title" id="payloadTitle">WARHEAD DEPLOYMENT</div>
+                <div class="desc-title" id="payloadTitle">ONE-TO-MANY KINETIC AREA EFFECTOR</div>
                 <!-- EDITABLE: Payload description below — updated dynamically -->
-                <p id="payloadDescText">High-density tungsten fragmentation sleeve surrounds the warhead core. On fuze trigger, a precisely timed explosive ring shears the sleeve into hundreds of high-velocity fragments with a controlled dispersion cone matched to the swarm spread. Fragments achieve > 400 m/s lateral velocity, defeating drone airframes and rotor assemblies within a 15m radius sphere.</p>
+                <p id="payloadDescText">Command-triggered or proximity-fused at the cluster's density centroid, the effector delivers controlled high-density fragmentation for hard-kill, covering a 10-15m radius. This achieves a 1:N engagement ratio — turning a raid of multiple drones into a single intercept instead of a one-for-one exchange, matching the economics of a swarm attack.</p>
               </div>
             </div>
           </div>

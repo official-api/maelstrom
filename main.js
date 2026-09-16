@@ -101,7 +101,7 @@
   function onRadarAlert() {
     simPhase = 'killSelect';
     el('alertBanner').classList.remove('hidden');
-    el('alertText').textContent = '⚠ DRONE SWARM DETECTED - RADAR CONTACT CONFIRMED - SELECT INTERCEPT MODE';
+    el('alertText').textContent = '⚠ DRONE CLUSTER DETECTED - GCS TRACKING CONFIRMED - SELECT INTERCEPT MODE';
     setStatus('THREAT DETECTED', true);
     showPhase('killmode');
     setHud('hudSys', 'THREAT');
@@ -285,13 +285,13 @@
     if (!title || !desc) return;
 
     if (mode === 'hard') {
-      title.textContent = 'HARD KILL - FRAGMENTATION WARHEAD';
+      title.textContent = 'HARD KILL - FRAGMENTATION EFFECTOR';
       /* EDITABLE: Hard Kill Payload description */
-      desc.textContent = 'High-density tungsten fragmentation sleeve surrounds the warhead core. On fuze trigger, a precisely timed explosive ring shears the sleeve into hundreds of high-velocity fragments with a controlled dispersion cone matched to the swarm spread. Fragments achieve > 400 m/s lateral velocity, defeating drone airframes and rotor assemblies within a 15m radius sphere.';
+      desc.textContent = 'Command-triggered or proximity-fused at the cluster density centroid, the warhead delivers controlled high-density fragmentation across a 10-15m radius - a 1:N kinetic effect that downs multiple drones in one intercept rather than one interceptor per drone.';
     } else {
-      title.textContent = 'SOFT KILL - CARBON FIBRE BURST';
+      title.textContent = 'SOFT KILL - HIGH-POWER MICROWAVE';
       /* EDITABLE: Soft Kill Payload description */
-      desc.textContent = 'A compressed carbon-fibre filament package is ejected by a small pyrotechnic charge. The filament cloud expands to fill a 20m radius sphere in milliseconds - individual fibres entangle rotor blades and short-circuit exposed electronics. No energetic material is deposited on the ground, making this ideal for urban or complex terrain where collateral damage must be minimised.';
+      desc.textContent = 'A high-power microwave pulse is sized to disable several drones in one detonation, disrupting motor controllers and onboard electronics across the cluster. No fragments or debris are deposited on the ground, making this the preferred option over ports, refineries and dense housing where collateral risk must be minimised.';
     }
   }
 
