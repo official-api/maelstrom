@@ -289,9 +289,9 @@
       /* EDITABLE: Hard Kill Payload description */
       desc.textContent = 'Command-triggered or proximity-fused at the cluster density centroid, the warhead delivers controlled high-density fragmentation across a 10-15m radius - a 1:N kinetic effect that downs multiple drones in one intercept rather than one interceptor per drone.';
     } else {
-      title.textContent = 'SOFT KILL - HIGH-POWER MICROWAVE';
+      title.textContent = 'SOFT KILL - CARBON FIBRE BURST';
       /* EDITABLE: Soft Kill Payload description */
-      desc.textContent = 'A high-power microwave pulse is sized to disable several drones in one detonation, disrupting motor controllers and onboard electronics across the cluster. No fragments or debris are deposited on the ground, making this the preferred option over ports, refineries and dense housing where collateral risk must be minimised.';
+      desc.textContent = 'A compressed carbon-fibre filament package is ejected by a small pyrotechnic charge, expanding to fill the cluster area in milliseconds. Individual fibres entangle rotor blades and short-circuit exposed electronics across several drones at once. No fragments or energetic material reach the ground, making this the preferred option over ports, refineries and dense housing where collateral risk must be minimised.';
     }
   }
 
