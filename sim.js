@@ -5,7 +5,7 @@
 
 const SIM = (() => {
   let renderer, scene, camera, clock;
-  let groundedSkybox, skyEnvTex;
+  let ground, skyDome;
   let rocketGroup = null;
   let drones = [];
   let launchPod;
@@ -91,7 +91,8 @@ const SIM = (() => {
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setSize(W, H);
-    renderer.shadowMap.enabled = false; // shadows not needed
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.1;
     renderer.outputEncoding = THREE.sRGBEncoding;
@@ -108,11 +109,11 @@ const SIM = (() => {
     camera.position.set(-14, 7, 20);
     camera.lookAt(0, 2, 0);
 
-    // All external texture/HDRI loads (the sky/ground HDRI) go through
+    // All external texture/HDRI loads (sky, ground, mountains) go through
     // three.js's shared DefaultLoadingManager, so we can report combined
     // progress and a single "everything's ready" moment back to the UI for
-    // the loading screen — this must be wired up BEFORE buildSky() kicks
-    // off its load below.
+    // the loading screen — this must be wired up BEFORE buildSky/buildGround/
+    // buildMountains kick off their loads below.
     THREE.DefaultLoadingManager.onProgress = (url, itemsLoaded, itemsTotal) => {
       if (onLoadProgressCb) onLoadProgressCb(itemsLoaded, itemsTotal);
     };
@@ -125,7 +126,8 @@ const SIM = (() => {
 
     buildLighting();
     buildSky();
-    buildScorchPatches();
+    buildGround();
+    buildMountains();
     buildDroneSwarm();   // must exist first so the launch pod can be oriented to face it
     buildLaunchPod();
     buildRocket();       // rocket is loaded in the tube and visible from the very start
@@ -158,6 +160,16 @@ const SIM = (() => {
     // Sun - hard, high, bright desert midday sun (matches the goegap HDRI sky)
     sunLight = new THREE.DirectionalLight(0xfff2d8, 2.4);
     sunLight.position.set(70, 95, -20);
+    sunLight.castShadow = true;
+    sunLight.shadow.mapSize.set(4096, 4096);
+    sunLight.shadow.camera.near = 0.5;
+    sunLight.shadow.camera.far = 400;
+    sunLight.shadow.camera.left = -100;
+    sunLight.shadow.camera.right = 100;
+    sunLight.shadow.camera.top = 100;
+    sunLight.shadow.camera.bottom = -100;
+    sunLight.shadow.bias = -0.0003;
+    sunLight.shadow.normalBias = 0.02;
     scene.add(sunLight);
 
     // Sky fill - pale desert-blue opposite the sun
@@ -176,19 +188,13 @@ const SIM = (() => {
   }
 
   /* ════════════════════════════════════
-     SKY — grounded skybox
-     Real, photographed 360° sky (Poly Haven "Goegap" — CC0 desert HDRI: clear
-     midday sun over sandy/rocky terrain). Instead of a flat background plus a
-     separate ground plane + mountain ring, this uses three.js's "grounded
-     skybox" technique (examples/jsm/objects/GroundedSkybox.js, ported here
-     for the UMD/r128 build this page loads): the equirect photo is projected
-     onto a huge sphere whose lower hemisphere is flattened onto a ground
-     plane at y=0, so the HDRI's own photographed desert floor *is* the
-     ground the launcher sits on — no separate terrain/mountain geometry, and
-     no seam between "our" ground and the sky photo.
+     SKY
   ════════════════════════════════════ */
+  // Real, photographed 360° sky (Poly Haven "Goegap" — CC0 desert HDRI: clear
+  // midday sun over sandy/rocky terrain) instead of a native three.js shader
+  // gradient. Used both as the visible backdrop and as scene.environment so
+  // metal/rock surfaces pick up real-world reflections and ambient colour.
   const SKY_HDRI_URL = 'https://dl.polyhaven.org/file/ph-assets/HDRIs/extra/Tonemapped%20JPG/goegap.jpg';
-  const SKY_RADIUS = 500; // must stay well beyond anything the camera/rocket can reach
 
   function buildSky() {
     const loader = new THREE.TextureLoader();
@@ -198,74 +204,128 @@ const SIM = (() => {
       (tex) => {
         tex.mapping = THREE.EquirectangularReflectionMapping;
         tex.encoding = THREE.sRGBEncoding;
-        skyEnvTex = tex;
-        scene.environment = tex; // real-photo image-based lighting
-        scene.background = null; // the grounded skybox mesh itself is the backdrop
-        rebuildGroundedSkybox(camera.position.y);
+        scene.background = tex;
+        scene.environment = tex; // image-based lighting from the real photo
       },
       undefined,
       (err) => {
-        console.warn('[MAELSTROM] Sky HDRI failed to load — using flat fallback sky colour.', err);
-        scene.background = new THREE.Color(0x8ab8c8);
+        console.warn('[MAELSTROM] Sky HDRI failed to load — using procedural fallback sky.', err);
+        buildProceduralSkyFallback();
       }
     );
   }
 
-  // Minimal UMD port of three.js's GroundedSkybox addon (normally
-  // `import { GroundedSkybox } from 'three/addons/objects/GroundedSkybox.js'`,
-  // not available in the r128 non-module build this page loads from CDN).
-  // Projects `map` onto a sphere of `radius`, smoothly flattening everything
-  // below y=0 toward a ground plane based on `height` (how high above that
-  // ground the viewer is meant to be).
-  function makeGroundedSkybox(map, height, radius, resolution) {
-    resolution = resolution || 64;
-    const geometry = new THREE.SphereGeometry(radius, 2 * resolution, resolution);
-    geometry.scale(1, 1, -1);
-    const pos = geometry.getAttribute('position');
-    const tmp = new THREE.Vector3();
+  // Fallback only: reproduces the original native three.js gradient sky, used
+  // solely if the external HDRI asset can't be reached (offline / blocked CDN).
+  function buildProceduralSkyFallback() {
+    const skyGeo = new THREE.SphereGeometry(800, 48, 24);
+    const skyMat = new THREE.ShaderMaterial({
+      uniforms: {
+        topColor:  { value: new THREE.Color(0x0d2a5e) },
+        midColor:  { value: new THREE.Color(0x2a6080) },
+        botColor:  { value: new THREE.Color(0x8ab8c8) },
+        sunDir:    { value: new THREE.Vector3(0.6, 0.8, -0.3).normalize() },
+        sunColor:  { value: new THREE.Color(1.0, 0.9, 0.6) },
+      },
+      vertexShader: `
+        varying vec3 vWorldDir;
+        void main() {
+          vWorldDir = normalize((modelMatrix * vec4(position, 0.0)).xyz);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 topColor, midColor, botColor, sunDir, sunColor;
+        varying vec3 vWorldDir;
+        void main() {
+          float h = vWorldDir.y;
+          vec3 sky = mix(botColor, midColor, smoothstep(-0.1, 0.3, h));
+          sky = mix(sky, topColor, smoothstep(0.2, 0.9, h));
+          float sun = max(0.0, dot(normalize(vWorldDir), sunDir));
+          float disc = pow(sun, 180.0);
+          float halo = pow(sun, 8.0) * 0.4;
+          sky += sunColor * disc * 3.0 + sunColor * halo;
+          float horiz = exp(-abs(h) * 6.0);
+          sky = mix(sky, vec3(0.7, 0.85, 0.9), horiz * 0.25);
+          gl_FragColor = vec4(sky, 1.0);
+        }
+      `,
+      side: THREE.BackSide
+    });
+    skyDome = new THREE.Mesh(skyGeo, skyMat);
+    scene.add(skyDome);
+  }
+
+  /* ════════════════════════════════════
+     GROUND - procedural terrain
+  ════════════════════════════════════ */
+  // Real, photographed CC0 PBR texture sets (Poly Haven) used to skin the
+  // terrain instead of flat native-three.js vertex colours.
+  const GROUND_TEX_BASE = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/sandy_gravel_02/sandy_gravel_02_';
+  const ROCK_TEX_BASE    = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/rock_face_03/rock_face_03_';
+
+  function loadRepeatingTexture(loader, url, repeatX, repeatY, isColorMap) {
+    const tex = loader.load(url, undefined, undefined, () => {
+      console.warn('[MAELSTROM] texture failed to load:', url);
+    });
+    tex.wrapS = THREE.RepeatWrapping;
+    tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(repeatX, repeatY);
+    if (isColorMap) tex.encoding = THREE.sRGBEncoding;
+    if (renderer) tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    return tex;
+  }
+
+  function buildGround() {
+    const loader = new THREE.TextureLoader();
+    loader.crossOrigin = 'anonymous';
+    // Ground must extend at least as far as the mountain ring's base radius
+    // (see buildMountains) in every direction, or the horizon shows a gap of
+    // empty space between the flat plane and the surrounding peaks.
+    const GROUND_SIZE = 700; // half-width 350, comfortably beyond MOUNTAIN_RADIUS (300)
+    const REPEAT = 30 * (GROUND_SIZE / 400); // keep texel density constant vs. the old 400-unit plane
+
+    const diffuseMap  = loadRepeatingTexture(loader, GROUND_TEX_BASE + 'diff_2k.jpg', REPEAT, REPEAT, true);
+    const normalMap   = loadRepeatingTexture(loader, GROUND_TEX_BASE + 'nor_gl_2k.jpg', REPEAT, REPEAT, false);
+    const roughMap    = loadRepeatingTexture(loader, GROUND_TEX_BASE + 'rough_2k.jpg', REPEAT, REPEAT, false);
+    const aoMap       = loadRepeatingTexture(loader, GROUND_TEX_BASE + 'ao_2k.jpg', REPEAT, REPEAT, false);
+    const dispMap     = loadRepeatingTexture(loader, GROUND_TEX_BASE + 'disp_2k.jpg', REPEAT, REPEAT, false);
+
+    // Higher subdivision than the old flat plane so both the broad dune
+    // undulation (fbm) and the fine photographic displacement map read well.
+    const groundGeo = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE, 160, 160);
+    const pos = groundGeo.attributes.position;
+
+    // Displace Y (local, pre-rotation) — PlaneGeometry in r128 uses X/Y in plane, Z=0
+    // After rotation.x=-PI/2: local X->worldX, local Y->world-Z, local Z->worldY
+    // So to get height bumps in worldY we set local Z
     for (let i = 0; i < pos.count; i++) {
-      tmp.fromBufferAttribute(pos, i);
-      if (tmp.y < 0) {
-        const y1 = -height * 3 / 2;
-        const f = tmp.y < y1 ? -height / tmp.y : (1 - tmp.y * tmp.y / (3 * y1 * y1));
-        tmp.multiplyScalar(f);
-        tmp.toArray(pos.array, 3 * i);
-      }
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      const h = fbm(x * 0.04, y * 0.04, 4) * 2.5;
+      pos.setZ(i, h);
     }
-    pos.needsUpdate = true;
-    const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ map: map, depthWrite: false, fog: false }));
-    mesh.renderOrder = -1;
-    return mesh;
-  }
+    groundGeo.computeVertexNormals();
+    // aoMap requires a second UV channel — reuse the primary UVs.
+    groundGeo.setAttribute('uv2', new THREE.BufferAttribute(groundGeo.attributes.uv.array.slice(), 2));
 
-  // The scene's camera height swings hugely — a low drone-panning orbit
-  // (~y6-10) vs. the rocket climbing toward the swarm's intercept altitude
-  // (~y80-90+) — and GroundedSkybox's ground-flattening curve is baked into
-  // its geometry for one assumed viewer height. So instead of a single
-  // static skybox we rebuild it (cheaply throttled) whenever the camera's
-  // altitude has moved meaningfully, keeping the ground-to-sky transition
-  // looking correct at both drone-pan and rocket-flight heights, and we
-  // re-centre it under the camera every frame so it never appears to drift.
-  let lastSkyboxHeight = -1;
-  function rebuildGroundedSkybox(camY) {
-    if (!skyEnvTex) return;
-    const h = THREE.MathUtils.clamp(camY, 4, 140);
-    if (groundedSkybox && Math.abs(h - lastSkyboxHeight) < Math.max(2, lastSkyboxHeight * 0.2)) return;
-    lastSkyboxHeight = h;
-    if (groundedSkybox) {
-      scene.remove(groundedSkybox);
-      groundedSkybox.geometry.dispose();
-      groundedSkybox.material.dispose();
-    }
-    groundedSkybox = makeGroundedSkybox(skyEnvTex, h, SKY_RADIUS, 64);
-    groundedSkybox.position.set(camera.position.x, h, camera.position.z);
-    scene.add(groundedSkybox);
-  }
+    const groundMat = new THREE.MeshStandardMaterial({
+      map: diffuseMap,
+      normalMap: normalMap,
+      roughnessMap: roughMap,
+      aoMap: aoMap,
+      displacementMap: dispMap,
+      displacementScale: 0.3,
+      displacementBias: -0.12,
+      roughness: 1.0,
+      metalness: 0.0,
+    });
+    ground = new THREE.Mesh(groundGeo, groundMat);
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
 
-  // A few dark, flat "scorched ground" decals near the launch pad — these
-  // used to sit on the removed terrain mesh; they now sit directly at y=0,
-  // which is exactly where the grounded skybox's flattened floor is.
-  function buildScorchPatches() {
+    // Darker, scorched patches near launch pad
     const patchMat = new THREE.MeshStandardMaterial({ color: 0x352a1f, roughness: 1.0 });
     [[- 8, 8, 3.5], [-10, 6, 2], [-6, 11, 1.5]].forEach(([px, pz, pr]) => {
       const pg = new THREE.Mesh(new THREE.CircleGeometry(pr, 16), patchMat);
@@ -273,6 +333,51 @@ const SIM = (() => {
       pg.position.set(px, 0.02, pz);
       scene.add(pg);
     });
+  }
+
+  /* ════════════════════════════════════
+     DISTANT MOUNTAINS - real rock-face PBR
+     texture wrapped around the horizon, giving
+     the "entire background" a proper landform
+     instead of just sky meeting a flat plane.
+  ════════════════════════════════════ */
+  function buildMountains() {
+    const loader = new THREE.TextureLoader();
+    loader.crossOrigin = 'anonymous';
+
+    const diffuseMap = loadRepeatingTexture(loader, ROCK_TEX_BASE + 'diff_2k.jpg', 18, 3, true);
+    const normalMap  = loadRepeatingTexture(loader, ROCK_TEX_BASE + 'nor_gl_2k.jpg', 18, 3, false);
+    const roughMap   = loadRepeatingTexture(loader, ROCK_TEX_BASE + 'rough_2k.jpg', 18, 3, false);
+
+    // Must stay comfortably inside the ground plane's half-width (350, see
+    // buildGround) so the mountain ring's base is always covered by textured
+    // ground and never leaves a visible gap of empty space at the horizon.
+    const MOUNTAIN_RADIUS = 300;
+    const height = 95;
+    const geo = new THREE.CylinderGeometry(MOUNTAIN_RADIUS, MOUNTAIN_RADIUS * 1.04, height, 128, 10, true);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+      const angle = Math.atan2(z, x);
+      const ridge = fbm(Math.cos(angle) * 3 + 40, Math.sin(angle) * 3 + 40, 5);
+      const heightRatio = (y + height / 2) / height; // 0 bottom -> 1 top
+      const profile = 0.22 + Math.pow(ridge, 1.3) * 0.85; // per-angle silhouette height
+      pos.setY(i, -height / 2 + heightRatio * height * profile);
+    }
+    geo.computeVertexNormals();
+
+    const mat = new THREE.MeshStandardMaterial({
+      map: diffuseMap,
+      normalMap: normalMap,
+      roughnessMap: roughMap,
+      roughness: 1.0,
+      metalness: 0.0,
+      side: THREE.DoubleSide,
+      fog: true,
+    });
+    const mountains = new THREE.Mesh(geo, mat);
+    mountains.position.y = height / 2 - 3;
+    scene.add(mountains);
   }
 
   /* ════════════════════════════════════
@@ -284,7 +389,7 @@ const SIM = (() => {
     launchPod.position.copy(podBasePos);
     scene.add(launchPod);
 
-    const yBase = 0; // flat "ground" (grounded skybox floor sits at y=0) — no terrain height to sample
+    const yBase = fbm(-8 * 0.04, 8 * 0.04, 5) * 3.0 - fbm(-8 * 0.1 + 5, 8 * 0.1 + 5, 3) * 0.6;
 
     // Rocket longitudinal reference points (must track buildRocket()'s geometry):
     // nose tip ≈ +3.75, nozzle exit ≈ -5.9 (rocket-local Y, centre = 0).
@@ -1293,15 +1398,6 @@ const SIM = (() => {
       camera.position.lerp(back, dt * 0.7);
       camera.lookAt(droneSwarmCenter.x, droneSwarmCenter.y, droneSwarmCenter.z);
     }
-
-    // Keep the grounded skybox centred under the camera and re-tuned for
-    // its current altitude (drone panning vs. rocket climb — see
-    // rebuildGroundedSkybox).
-    if (groundedSkybox) {
-      groundedSkybox.position.x = camera.position.x;
-      groundedSkybox.position.z = camera.position.z;
-    }
-    rebuildGroundedSkybox(camera.position.y);
   }
 
   /* ════════════════════════════════════
