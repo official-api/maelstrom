@@ -337,7 +337,7 @@ const SIM = (() => {
   }
 
   /* ════════════════════════════════════
-     LAUNCH POD - Tripod launcher station with launch tubes & realistic radar
+     LAUNCH POD - Tripod launcher station with launch tubes & tripod-mounted radar
   ════════════════════════════════════ */
   function buildLaunchPod() {
     launchPod = new THREE.Group();
@@ -369,10 +369,16 @@ const SIM = (() => {
     const tripodCenterY = yBase + 0.85;
 
     // Central structural hub
-    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.55, 0.8, 16), darkMat);
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.62, 0.85, 16), darkMat);
     hub.position.y = tripodCenterY - 0.2;
     hub.castShadow = true; hub.receiveShadow = true;
     launchPod.add(hub);
+
+    // Heavy-duty mounting platform plate on tripod hub
+    const tripodTopPlate = new THREE.Mesh(new THREE.CylinderGeometry(0.92, 0.95, 0.12, 24), darkMat);
+    tripodTopPlate.position.y = tripodCenterY + 0.18;
+    tripodTopPlate.castShadow = true;
+    launchPod.add(tripodTopPlate);
 
     // 3 Heavy-duty Outrigger Tripod Legs spaced 120° apart
     for (let i = 0; i < 3; i++) {
@@ -410,8 +416,8 @@ const SIM = (() => {
     }
 
     /* ── Slew Bearing Ring ── */
-    const slewRing = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.9, 0.16, 32), darkMat);
-    slewRing.position.y = tripodCenterY + 0.25;
+    const slewRing = new THREE.Mesh(new THREE.CylinderGeometry(0.82, 0.86, 0.14, 32), darkMat);
+    slewRing.position.y = tripodCenterY + 0.28;
     slewRing.castShadow = true;
     launchPod.add(slewRing);
 
@@ -421,8 +427,8 @@ const SIM = (() => {
     launchPod.add(turretYaw);
 
     // Turret swivel base on tripod hub
-    const turretBase = new THREE.Mesh(new THREE.CylinderGeometry(0.82, 0.85, 0.3, 24), hullMat);
-    turretBase.position.y = 0.15;
+    const turretBase = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.82, 0.28, 24), hullMat);
+    turretBase.position.y = 0.14;
     turretBase.castShadow = true; turretBase.receiveShadow = true;
     turretYaw.add(turretBase);
 
@@ -532,78 +538,97 @@ const SIM = (() => {
       elevGroup.add(brace);
     }
 
-    /* ── REALISTIC FIRE-CONTROL RADAR SYSTEM ── */
+    /* ── TRIPOD-MOUNTED FIRE-CONTROL RADAR SYSTEM ── */
+    // Attached directly to launchPod (tripod station structure)
     const radarMast = new THREE.Group();
-    radarMast.position.set(-0.95, 0.25, -0.45);
+    radarMast.position.set(-1.15, tripodCenterY + 0.1, -0.65);
+    launchPod.add(radarMast);
 
-    // Mast pedestal & gear housing
-    const mastBase = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 1.2, 12), darkMat);
-    mastBase.position.y = 0.6;
+    // Tripod structural mounting arm / extension bracket welded to central tripod hub plate
+    const tripodBracket = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.14, 0.85), darkMat);
+    tripodBracket.position.set(0.4, 0.07, 0.32);
+    tripodBracket.castShadow = true;
+    radarMast.add(tripodBracket);
+
+    // Dual heavy-duty diagonal hydraulic support struts anchoring mast directly to tripod frame
+    const strut1 = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.95, 8), chromeMat);
+    strut1.position.set(0.35, -0.28, 0.15);
+    strut1.rotation.z = 0.58;
+    strut1.castShadow = true;
+    radarMast.add(strut1);
+
+    const strut2 = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.95, 8), chromeMat);
+    strut2.position.set(0.35, -0.28, 0.5);
+    strut2.rotation.z = 0.58;
+    strut2.castShadow = true;
+    radarMast.add(strut2);
+
+    // Heavy-duty mast pedestal & gear housing
+    const mastBase = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.14, 1.4, 12), darkMat);
+    mastBase.position.y = 0.7;
     mastBase.castShadow = true;
     radarMast.add(mastBase);
 
-    // Radar Azimuth Rotator Head (`radarDish` continuously rotates around Y-axis)
+    // Radar Azimuth Rotator Head (`radarDish` continuously rotates 360° around Y-axis)
     radarDish = new THREE.Group();
-    radarDish.position.set(0, 1.25, 0);
+    radarDish.position.set(0, 1.42, 0);
     radarMast.add(radarDish);
 
     // Rotator hub motor box
-    const motorBox = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.22, 0.3), radomeMat);
+    const motorBox = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.24, 0.32), radomeMat);
     motorBox.castShadow = true;
     radarDish.add(motorBox);
 
     // Radar dish back-frame & yoke arm
-    const yokeArm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.35, 0.25), darkMat);
-    yokeArm.position.set(0, 0.2, -0.05);
+    const yokeArm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.38, 0.26), darkMat);
+    yokeArm.position.set(0, 0.22, -0.05);
     yokeArm.rotation.x = -0.15;
     radarDish.add(yokeArm);
 
     // Realistic Parabolic Dish Reflector Mesh
-    const dishReflectorGeo = new THREE.SphereGeometry(0.52, 24, 18, 0, Math.PI * 2, 0, Math.PI * 0.42);
+    const dishReflectorGeo = new THREE.SphereGeometry(0.54, 24, 18, 0, Math.PI * 2, 0, Math.PI * 0.42);
     const dishReflector = new THREE.Mesh(dishReflectorGeo, dishMat);
-    dishReflector.position.set(0, 0.38, 0.12);
+    dishReflector.position.set(0, 0.42, 0.12);
     dishReflector.rotation.x = -Math.PI * 0.42; // Tilted upwards towards sky
     dishReflector.castShadow = true;
     radarDish.add(dishReflector);
 
     // Dish rear structural reinforcement ribs
     for (let r = 0; r < 4; r++) {
-      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.5, 0.12), darkMat);
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.52, 0.12), darkMat);
       rib.rotation.z = (r / 4) * Math.PI;
-      rib.position.set(0, 0.38, 0.05);
+      rib.position.set(0, 0.42, 0.05);
       radarDish.add(rib);
     }
 
     // Feedhorn focal support tripod (3 struts holding transceiver horn)
     for (let s = 0; s < 3; s++) {
       const strutAngle = (s / 3) * Math.PI * 2;
-      const fStrut = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.45, 6), darkMat);
-      fStrut.position.set(Math.sin(strutAngle) * 0.18, 0.38 + Math.cos(strutAngle) * 0.18, 0.22);
+      const fStrut = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.48, 6), darkMat);
+      fStrut.position.set(Math.sin(strutAngle) * 0.19, 0.42 + Math.cos(strutAngle) * 0.19, 0.23);
       fStrut.rotation.x = 0.6;
       fStrut.rotation.z = -strutAngle * 0.5;
       radarDish.add(fStrut);
     }
 
     // Feedhorn Transceiver / Waveguide Box
-    const feedHorn = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.05, 0.15, 10), radomeMat);
-    feedHorn.position.set(0, 0.38, 0.42);
+    const feedHorn = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.055, 0.16, 10), radomeMat);
+    feedHorn.position.set(0, 0.42, 0.44);
     feedHorn.rotation.x = Math.PI / 2;
     radarDish.add(feedHorn);
 
     // Counterweight at rear of dish
-    const counterWeight = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, 0.12), darkMat);
-    counterWeight.position.set(0, 0.35, -0.22);
+    const counterWeight = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.13, 0.13), darkMat);
+    counterWeight.position.set(0, 0.38, -0.24);
     radarDish.add(counterWeight);
 
     // Radar active status green LED indicator
     const radarLED = new THREE.Mesh(
-      new THREE.SphereGeometry(0.025, 8, 8),
+      new THREE.SphereGeometry(0.028, 8, 8),
       new THREE.MeshBasicMaterial({ color: 0x00ff66 })
     );
-    radarLED.position.set(0, 0.68, 0.1);
+    radarLED.position.set(0, 0.74, 0.1);
     radarDish.add(radarLED);
-
-    turretYaw.add(radarMast);
 
     /* ── Traverse Turret to Face Drone Swarm Target ── */
     const toSwarmFlat = new THREE.Vector3(droneSwarmCenter.x - podBasePos.x, 0, droneSwarmCenter.z - podBasePos.z);
@@ -1034,7 +1059,7 @@ const SIM = (() => {
   ════════════════════════════════════ */
   function updateRadar(dt) {
     if (!radarDish) return;
-    // Continuous 360-degree azimuth rotation of the realistic parabolic dish antenna
+    // Continuous 360-degree azimuth rotation of the parabolic radar antenna
     radarDish.rotation.y += dt * 2.2;
     if (radarScanRing) {
       radarScanAngle += dt * 2.2;
