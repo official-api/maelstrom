@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════
    MAELSTROM - THREE.JS 3D SIMULATION ENGINE v2
-   Photorealistic terrain, detailed rocket, improved guidance
+   Photorealistic terrain, detailed rocket, threat target engine
    ═══════════════════════════════════════ */
 
 const SIM = (() => {
@@ -17,14 +17,14 @@ const SIM = (() => {
 
   // State
   let simState = 'idle';
-  let killMode = null; // Unselected by default; user must pick 'hard' or 'soft'
+  let killMode = 'hard'; // Active by default on startup
   let missionTime = 0;
   let rocketPos = new THREE.Vector3();
   let rocketVel = new THREE.Vector3();
   let droneSwarmCenter = new THREE.Vector3();
   let trajectoryPoints = [];
   let launchOrigin = new THREE.Vector3();
-  let launchDir = new THREE.Vector3(0, 1, 0); // world-space direction launch tube points
+  let launchDir = new THREE.Vector3(0, 1, 0);
   
   // Swarm / Target manoeuvre
   let dronePhase = 0;
@@ -58,7 +58,6 @@ const SIM = (() => {
   let onDoneCb = null;
   let onLoadProgressCb = null;
   let onAssetsReadyCb = null;
-  let onModeRequiredCb = null;
 
   // ─── Noise helpers ───
   function hash(n) { return Math.abs(Math.sin(n * 127.1 + 311.7) * 43758.5453) % 1; }
@@ -78,9 +77,11 @@ const SIM = (() => {
   }
 
   /* ════════════════════════════════════
-     INIT
+     INIT (Instantly builds scene & targets)
   ════════════════════════════════════ */
-  function init(canvasId) {
+  function init(canvasId, initialMode = 'hard') {
+    killMode = initialMode;
+
     const canvas = document.getElementById(canvasId);
     const W = canvas.parentElement.clientWidth;
     const H = canvas.parentElement.clientHeight - 24;
@@ -118,12 +119,12 @@ const SIM = (() => {
     buildSky();
     buildGround();
     buildMountains();
-    buildLaunchPod(); // Built first so turret structures are available
+    buildLaunchPod();
     buildRocket();
 
-    if (killMode) {
-      buildTargets(killMode);
-    }
+    // Spawn targets immediately on load
+    buildTargets(killMode);
+    buildRadarScan();
 
     window.addEventListener('resize', onResize);
     window.addEventListener('orientationchange', () => setTimeout(onResize, 200));
@@ -239,7 +240,7 @@ const SIM = (() => {
   }
 
   /* ════════════════════════════════════
-     GROUND - procedural terrain
+     GROUND
   ════════════════════════════════════ */
   const GROUND_TEX_BASE = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/sandy_gravel_02/sandy_gravel_02_';
   const ROCK_TEX_BASE   = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/rock_face_03/rock_face_03_';
@@ -786,20 +787,33 @@ const SIM = (() => {
   }
 
   /* ════════════════════════════════════
-     TARGET SELECTION & PREVIEW
+     MODE SELECTION (Direct Activation)
   ════════════════════════════════════ */
   function setKillMode(mode) {
     if (mode !== 'hard' && mode !== 'soft') return;
     killMode = mode;
     buildTargets(killMode);
     
-    // Reposition rocket loaded in tube according to target orientation
+    // Position loaded rocket in tube to target vector
     if (rocketGroup && !rocketFired) {
       rocketPos.copy(launchOrigin);
       rocketGroup.position.copy(rocketPos);
       const initialQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), launchDir);
       rocketGroup.quaternion.copy(initialQuat);
     }
+
+    simState = 'approach';
+    cameraMode = 'swarm-zoom';
+
+    drones.forEach(d => {
+      d._vel.set(
+        (Math.random() - 0.5) * 0.015 - 0.006,
+        0,
+        (Math.random() - 0.5) * 0.015 + 0.012
+      );
+    });
+
+    if (onAlertCb) onAlertCb();
   }
 
   function buildTargets(mode) {
@@ -1336,7 +1350,7 @@ const SIM = (() => {
   /* ════════════════════════════════════
      CAMERA
   ════════════════════════════════════ */
-  let cameraMode = 'orbit'; // orbit | swarm-zoom | launch | flight | intercept
+  let cameraMode = 'swarm-zoom'; // Standard threat preview mode on launch
 
   function updateCamera(dt) {
     cameraTimer += dt;
@@ -1394,44 +1408,9 @@ const SIM = (() => {
   /* ════════════════════════════════════
      PUBLIC API
   ════════════════════════════════════ */
-  function startApproach(mode) {
-    if (mode) {
-      setKillMode(mode);
-    }
-    if (!killMode) {
-      console.warn('[MAELSTROM] Cannot start simulation: Select Hard Kill or Soft Kill first.');
-      if (onModeRequiredCb) onModeRequiredCb();
-      return false;
-    }
-
-    simState = 'approach';
-    cameraMode = 'swarm-zoom';
-    buildRadarScan();
-
-    drones.forEach(d => {
-      d._vel.set(
-        (Math.random() - 0.5) * 0.015 - 0.006,
-        0,
-        (Math.random() - 0.5) * 0.015 + 0.012
-      );
-    });
-
-    setTimeout(() => {
-      cameraMode = 'launch';
-      if (onAlertCb) onAlertCb();
-    }, 3200);
-
-    return true;
-  }
-
   function launchRocket(mode) {
     if (mode) {
       setKillMode(mode);
-    }
-    if (!killMode) {
-      console.warn('[MAELSTROM] Cannot launch rocket: Select Hard Kill or Soft Kill first.');
-      if (onModeRequiredCb) onModeRequiredCb();
-      return false;
     }
 
     simState = 'launch';
@@ -1490,7 +1469,6 @@ const SIM = (() => {
     if (radarScanRing) { scene.remove(radarScanRing); radarScanRing = null; }
 
     simState = 'idle';
-    killMode = null; // Unselect mode on reset
     missionTime = 0;
     rocketFired = false;
     interceptDone = false;
@@ -1501,11 +1479,13 @@ const SIM = (() => {
     trajectoryPoints = [];
     rocketPos.set(0, 0, 0);
     rocketVel.set(0, 0, 0);
-    cameraMode = 'orbit';
+    cameraMode = 'swarm-zoom';
     cameraTimer = 0;
     dronePhase = 0;
 
     buildRocket();
+    buildTargets(killMode);
+    buildRadarScan();
   }
 
   function onAlert(cb) { onAlertCb = cb; }
@@ -1514,14 +1494,13 @@ const SIM = (() => {
   function onDone(cb) { onDoneCb = cb; }
   function onLoadProgress(cb) { onLoadProgressCb = cb; }
   function onAssetsReady(cb) { onAssetsReadyCb = cb; }
-  function onModeRequired(cb) { onModeRequiredCb = cb; }
 
   return {
-    init, setKillMode, startApproach, launchRocket, resetSim,
+    init, setKillMode, launchRocket, resetSim,
     getTrajectoryPoints, getRocketPos, getSwarmCenter,
     getSimState, getMissionTime,
     pauseRocket, resumeRocket, isRocketPaused, onStageReached,
     onAlert, onRocketLaunch, onIntercept, onDone,
-    onLoadProgress, onAssetsReady, onModeRequired
+    onLoadProgress, onAssetsReady
   };
 })();
