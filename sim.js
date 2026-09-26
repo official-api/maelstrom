@@ -25,16 +25,12 @@ const SIM = (() => {
   let launchOrigin = new THREE.Vector3();
   let launchDir = new THREE.Vector3(0, 1, 0); // world-space direction the launch tube (and loaded rocket) points
   // Swarm manoeuvre: forward -> strafe right -> forward again, flat altitude.
-  //   Phase 0 FORWARD : fly in _swarmFwd direction
-  //   Phase 1 STRAFE  : slide sideways in _swarmRight direction
-  //   Phase 2 FORWARD : resume _swarmFwd direction
-  // Phases are keyed to rocket distance fractions (same system as STAGE_FRACTIONS).
   let dronePhase = 0;
   const DRONE_STRAFE_START = 0.35; // fraction of totalFlightDistance where strafe begins
   const DRONE_STRAFE_END   = 0.60; // fraction where strafe ends and forward resumes
-  // Initial forward direction (swarm starts at 150,78,-130 heading toward pod at -8,y,8)
+  // Initial forward direction
   const _swarmFwd   = new THREE.Vector3(-158, 0, 138).normalize();
-  // Right-hand perpendicular of _swarmFwd in XZ plane (rotate +90 deg around Y)
+  // Right-hand perpendicular of _swarmFwd in XZ plane
   const _swarmRight = new THREE.Vector3(_swarmFwd.z, 0, -_swarmFwd.x);
   const DRONE_START_ALT = 78;   // fixed altitude — swarm flies flat
   let engineFlame, engineFlame2, engineLight;
@@ -42,10 +38,6 @@ const SIM = (() => {
   let interceptDone = false;
   let rocketPaused = false;
 
-  // Flight is divided into checkpoints by distance actually travelled (not
-  // wall-clock time), so the three staged animations are evenly spaced out
-  // along the flight path regardless of how fast the missile is moving.
-  // 0.25 / 0.5 / 0.75 of the total launch-to-target distance.
   const STAGE_FRACTIONS = [0.25, 0.5, 0.75];
   let totalFlightDistance = 0;
   let distanceTraveled = 0;
@@ -99,8 +91,6 @@ const SIM = (() => {
     renderer.physicallyCorrectLights = true;
 
     scene = new THREE.Scene();
-    // Warm, dusty atmospheric haze — matches the sandy/mineral-mountain backdrop
-    // instead of the old cool-grey fog, so distant terrain fades believably.
     scene.fog = new THREE.FogExp2(0xcdbd9c, 0.0021);
 
     clock = new THREE.Clock();
@@ -109,11 +99,6 @@ const SIM = (() => {
     camera.position.set(-14, 7, 20);
     camera.lookAt(0, 2, 0);
 
-    // All external texture/HDRI loads (sky, ground, mountains) go through
-    // three.js's shared DefaultLoadingManager, so we can report combined
-    // progress and a single "everything's ready" moment back to the UI for
-    // the loading screen — this must be wired up BEFORE buildSky/buildGround/
-    // buildMountains kick off their loads below.
     THREE.DefaultLoadingManager.onProgress = (url, itemsLoaded, itemsTotal) => {
       if (onLoadProgressCb) onLoadProgressCb(itemsLoaded, itemsTotal);
     };
@@ -153,11 +138,9 @@ const SIM = (() => {
      LIGHTING
   ════════════════════════════════════ */
   function buildLighting() {
-    // Rich ambient sky light
     const ambient = new THREE.AmbientLight(0x554a3c, 0.3);
     scene.add(ambient);
 
-    // Sun - hard, high, bright desert midday sun (matches the goegap HDRI sky)
     sunLight = new THREE.DirectionalLight(0xfff2d8, 2.4);
     sunLight.position.set(70, 95, -20);
     sunLight.castShadow = true;
@@ -172,16 +155,13 @@ const SIM = (() => {
     sunLight.shadow.normalBias = 0.02;
     scene.add(sunLight);
 
-    // Sky fill - pale desert-blue opposite the sun
     const fillLight = new THREE.DirectionalLight(0xaecbdc, 0.45);
     fillLight.position.set(-30, 20, 40);
     scene.add(fillLight);
 
-    // Hemisphere - sky/ground bounce, tinted for sand + mineral rock instead of grass
     const hemi = new THREE.HemisphereLight(0x9fc4dd, 0x8a6a45, 0.55);
     scene.add(hemi);
 
-    // Ground bounce (warm sand reflectance)
     const bounce = new THREE.DirectionalLight(0xcaa877, 0.35);
     bounce.position.set(0, -10, 0);
     scene.add(bounce);
@@ -190,10 +170,6 @@ const SIM = (() => {
   /* ════════════════════════════════════
      SKY
   ════════════════════════════════════ */
-  // Real, photographed 360° sky (Poly Haven "Goegap" — CC0 desert HDRI: clear
-  // midday sun over sandy/rocky terrain) instead of a native three.js shader
-  // gradient. Used both as the visible backdrop and as scene.environment so
-  // metal/rock surfaces pick up real-world reflections and ambient colour.
   const SKY_HDRI_URL = 'https://dl.polyhaven.org/file/ph-assets/HDRIs/extra/Tonemapped%20JPG/goegap.jpg';
 
   function buildSky() {
@@ -205,7 +181,7 @@ const SIM = (() => {
         tex.mapping = THREE.EquirectangularReflectionMapping;
         tex.encoding = THREE.sRGBEncoding;
         scene.background = tex;
-        scene.environment = tex; // image-based lighting from the real photo
+        scene.environment = tex;
       },
       undefined,
       (err) => {
@@ -215,8 +191,6 @@ const SIM = (() => {
     );
   }
 
-  // Fallback only: reproduces the original native three.js gradient sky, used
-  // solely if the external HDRI asset can't be reached (offline / blocked CDN).
   function buildProceduralSkyFallback() {
     const skyGeo = new THREE.SphereGeometry(800, 48, 24);
     const skyMat = new THREE.ShaderMaterial({
@@ -259,10 +233,8 @@ const SIM = (() => {
   /* ════════════════════════════════════
      GROUND - procedural terrain
   ════════════════════════════════════ */
-  // Real, photographed CC0 PBR texture sets (Poly Haven) used to skin the
-  // terrain instead of flat native-three.js vertex colours.
   const GROUND_TEX_BASE = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/sandy_gravel_02/sandy_gravel_02_';
-  const ROCK_TEX_BASE    = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/rock_face_03/rock_face_03_';
+  const ROCK_TEX_BASE   = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/rock_face_03/rock_face_03_';
 
   function loadRepeatingTexture(loader, url, repeatX, repeatY, isColorMap) {
     const tex = loader.load(url, undefined, undefined, () => {
@@ -279,11 +251,8 @@ const SIM = (() => {
   function buildGround() {
     const loader = new THREE.TextureLoader();
     loader.crossOrigin = 'anonymous';
-    // Ground must extend at least as far as the mountain ring's base radius
-    // (see buildMountains) in every direction, or the horizon shows a gap of
-    // empty space between the flat plane and the surrounding peaks.
-    const GROUND_SIZE = 700; // half-width 350, comfortably beyond MOUNTAIN_RADIUS (300)
-    const REPEAT = 30 * (GROUND_SIZE / 400); // keep texel density constant vs. the old 400-unit plane
+    const GROUND_SIZE = 700;
+    const REPEAT = 30 * (GROUND_SIZE / 400);
 
     const diffuseMap  = loadRepeatingTexture(loader, GROUND_TEX_BASE + 'diff_2k.jpg', REPEAT, REPEAT, true);
     const normalMap   = loadRepeatingTexture(loader, GROUND_TEX_BASE + 'nor_gl_2k.jpg', REPEAT, REPEAT, false);
@@ -291,14 +260,9 @@ const SIM = (() => {
     const aoMap       = loadRepeatingTexture(loader, GROUND_TEX_BASE + 'ao_2k.jpg', REPEAT, REPEAT, false);
     const dispMap     = loadRepeatingTexture(loader, GROUND_TEX_BASE + 'disp_2k.jpg', REPEAT, REPEAT, false);
 
-    // Higher subdivision than the old flat plane so both the broad dune
-    // undulation (fbm) and the fine photographic displacement map read well.
     const groundGeo = new THREE.PlaneGeometry(GROUND_SIZE, GROUND_SIZE, 160, 160);
     const pos = groundGeo.attributes.position;
 
-    // Displace Y (local, pre-rotation) — PlaneGeometry in r128 uses X/Y in plane, Z=0
-    // After rotation.x=-PI/2: local X->worldX, local Y->world-Z, local Z->worldY
-    // So to get height bumps in worldY we set local Z
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i);
       const y = pos.getY(i);
@@ -306,7 +270,6 @@ const SIM = (() => {
       pos.setZ(i, h);
     }
     groundGeo.computeVertexNormals();
-    // aoMap requires a second UV channel — reuse the primary UVs.
     groundGeo.setAttribute('uv2', new THREE.BufferAttribute(groundGeo.attributes.uv.array.slice(), 2));
 
     const groundMat = new THREE.MeshStandardMaterial({
@@ -325,9 +288,8 @@ const SIM = (() => {
     ground.receiveShadow = true;
     scene.add(ground);
 
-    // Darker, scorched patches near launch pad
     const patchMat = new THREE.MeshStandardMaterial({ color: 0x352a1f, roughness: 1.0 });
-    [[- 8, 8, 3.5], [-10, 6, 2], [-6, 11, 1.5]].forEach(([px, pz, pr]) => {
+    [[-8, 8, 3.5], [-10, 6, 2], [-6, 11, 1.5]].forEach(([px, pz, pr]) => {
       const pg = new THREE.Mesh(new THREE.CircleGeometry(pr, 16), patchMat);
       pg.rotation.x = -Math.PI / 2;
       pg.position.set(px, 0.02, pz);
@@ -336,10 +298,7 @@ const SIM = (() => {
   }
 
   /* ════════════════════════════════════
-     DISTANT MOUNTAINS - real rock-face PBR
-     texture wrapped around the horizon, giving
-     the "entire background" a proper landform
-     instead of just sky meeting a flat plane.
+     DISTANT MOUNTAINS
   ════════════════════════════════════ */
   function buildMountains() {
     const loader = new THREE.TextureLoader();
@@ -349,9 +308,6 @@ const SIM = (() => {
     const normalMap  = loadRepeatingTexture(loader, ROCK_TEX_BASE + 'nor_gl_2k.jpg', 18, 3, false);
     const roughMap   = loadRepeatingTexture(loader, ROCK_TEX_BASE + 'rough_2k.jpg', 18, 3, false);
 
-    // Must stay comfortably inside the ground plane's half-width (350, see
-    // buildGround) so the mountain ring's base is always covered by textured
-    // ground and never leaves a visible gap of empty space at the horizon.
     const MOUNTAIN_RADIUS = 300;
     const height = 95;
     const geo = new THREE.CylinderGeometry(MOUNTAIN_RADIUS, MOUNTAIN_RADIUS * 1.04, height, 128, 10, true);
@@ -360,8 +316,8 @@ const SIM = (() => {
       const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
       const angle = Math.atan2(z, x);
       const ridge = fbm(Math.cos(angle) * 3 + 40, Math.sin(angle) * 3 + 40, 5);
-      const heightRatio = (y + height / 2) / height; // 0 bottom -> 1 top
-      const profile = 0.22 + Math.pow(ridge, 1.3) * 0.85; // per-angle silhouette height
+      const heightRatio = (y + height / 2) / height;
+      const profile = 0.22 + Math.pow(ridge, 1.3) * 0.85;
       pos.setY(i, -height / 2 + heightRatio * height * profile);
     }
     geo.computeVertexNormals();
@@ -381,7 +337,7 @@ const SIM = (() => {
   }
 
   /* ════════════════════════════════════
-     LAUNCH POD - detailed military
+     LAUNCH POD - Tripod launcher station with launch tubes & realistic radar
   ════════════════════════════════════ */
   function buildLaunchPod() {
     launchPod = new THREE.Group();
@@ -391,111 +347,138 @@ const SIM = (() => {
 
     const yBase = fbm(-8 * 0.04, 8 * 0.04, 5) * 3.0 - fbm(-8 * 0.1 + 5, 8 * 0.1 + 5, 3) * 0.6;
 
-    // Rocket longitudinal reference points (must track buildRocket()'s geometry):
-    // nose tip ≈ +3.75, nozzle exit ≈ -5.9 (rocket-local Y, centre = 0).
-    const ROCKET_TAIL_Y = -6.05;   // just aft of the nozzle exit, with clearance
-    const ROCKET_MUZZLE_Y = -0.35; // rocket-local Y that sits level with the tube mouth
-    const TUBE_LEN = ROCKET_MUZZLE_Y - ROCKET_TAIL_Y; // enclosed tube length
+    // Rocket longitudinal reference points:
+    const ROCKET_TAIL_Y = -6.05;
+    const ROCKET_MUZZLE_Y = -0.35;
+    const TUBE_LEN = ROCKET_MUZZLE_Y - ROCKET_TAIL_Y;
     const TUBE_OUTER_R = 0.62;
-    const TUBE_INNER_R = 0.52; // must clear the 0.45-radius rocket body
-    const ELEV_ANGLE = Math.PI / 6.5; // ~28° elevation
+    const TUBE_INNER_R = 0.52;
+    const ELEV_ANGLE = Math.PI / 6.5;
 
-    // ── Materials
-    const hullMat   = new THREE.MeshStandardMaterial({ color: 0x4d5a48, roughness: 0.6, metalness: 0.55 });
-    const armorMat  = new THREE.MeshStandardMaterial({ color: 0x3c4438, roughness: 0.75, metalness: 0.4 });
-    const darkMat   = new THREE.MeshStandardMaterial({ color: 0x272e2b, roughness: 0.55, metalness: 0.7 });
-    const blackMat  = new THREE.MeshStandardMaterial({ color: 0x14181a, roughness: 0.35, metalness: 0.85 });
-    const hazardMat = new THREE.MeshStandardMaterial({ color: 0xc7a423, roughness: 0.55, metalness: 0.25 });
-    const glassMat  = new THREE.MeshStandardMaterial({ color: 0x0e2530, roughness: 0.1, metalness: 0.9 });
-    const boreMat   = new THREE.MeshStandardMaterial({ color: 0x05070a, roughness: 0.3, metalness: 0.9, side: THREE.BackSide });
+    // Materials
+    const hullMat    = new THREE.MeshStandardMaterial({ color: 0x4a5446, roughness: 0.55, metalness: 0.5 });
+    const darkMat    = new THREE.MeshStandardMaterial({ color: 0x222725, roughness: 0.5, metalness: 0.7 });
+    const chromeMat  = new THREE.MeshStandardMaterial({ color: 0x8899a6, roughness: 0.25, metalness: 0.85 });
+    const blackMat   = new THREE.MeshStandardMaterial({ color: 0x121517, roughness: 0.4, metalness: 0.8 });
+    const hazardMat  = new THREE.MeshStandardMaterial({ color: 0xc7a423, roughness: 0.5, metalness: 0.3 });
+    const boreMat    = new THREE.MeshStandardMaterial({ color: 0x05070a, roughness: 0.3, metalness: 0.9, side: THREE.BackSide });
+    const dishMat    = new THREE.MeshStandardMaterial({ color: 0x5a6560, roughness: 0.4, metalness: 0.6, side: THREE.DoubleSide });
+    const radomeMat  = new THREE.MeshStandardMaterial({ color: 0x333b38, roughness: 0.3, metalness: 0.8 });
 
-    /* ── Stabilized ground chassis ── */
-    const chassis = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.5, 2.4), hullMat);
-    chassis.position.y = yBase + 0.25;
-    chassis.castShadow = true; chassis.receiveShadow = true;
-    launchPod.add(chassis);
+    /* ── TRIPOD BASE ASSEMBLY ── */
+    const tripodCenterY = yBase + 0.85;
 
-    const skirt = new THREE.Mesh(new THREE.BoxGeometry(3.55, 0.14, 2.55), darkMat);
-    skirt.position.y = yBase + 0.57;
-    launchPod.add(skirt);
+    // Central structural hub
+    const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.55, 0.8, 16), darkMat);
+    hub.position.y = tripodCenterY - 0.2;
+    hub.castShadow = true; hub.receiveShadow = true;
+    launchPod.add(hub);
 
-    // Corner hydraulic outrigger jacks (levelling legs)
-    [[1.5, 1.05], [1.5, -1.05], [-1.5, 1.05], [-1.5, -1.05]].forEach(([lx, lz]) => {
-      const jack = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.85, 8), darkMat);
-      jack.position.set(lx, yBase - 0.17, lz);
-      jack.castShadow = true;
-      launchPod.add(jack);
-      const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.07, 8), blackMat);
-      pad.position.set(lx, yBase - 0.6, lz);
-      launchPod.add(pad);
-    });
+    // 3 Heavy-duty Outrigger Tripod Legs spaced 120° apart
+    for (let i = 0; i < 3; i++) {
+      const legAngle = (i / 3) * Math.PI * 2;
+      const legGroup = new THREE.Group();
+      legGroup.rotation.y = legAngle;
+      legGroup.position.set(0, tripodCenterY - 0.2, 0);
 
-    /* ── Slew bearing (rotating ring the turret sits on) ── */
-    const slewRing = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.2, 0.14, 28), darkMat);
-    slewRing.position.y = yBase + 0.71;
+      // Main structural leg beam
+      const legLen = 2.2;
+      const legBeam = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.22, legLen), hullMat);
+      legBeam.position.set(0, -0.4, legLen / 2);
+      legBeam.rotation.x = 0.48; // angled down to terrain
+      legBeam.castShadow = true; legBeam.receiveShadow = true;
+      legGroup.add(legBeam);
+
+      // Hydraulic bracing strut
+      const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.2, 8), chromeMat);
+      strut.position.set(0, -0.55, 0.65);
+      strut.rotation.x = 0.22;
+      legGroup.add(strut);
+
+      // Articulated ground footpad
+      const footPad = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.42, 0.1, 12), blackMat);
+      footPad.position.set(0, -0.85, 1.95);
+      footPad.receiveShadow = true; footPad.castShadow = true;
+      legGroup.add(footPad);
+
+      // Ground anchor screw / locking pin
+      const screw = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.35, 8), darkMat);
+      screw.position.set(0, -0.7, 1.95);
+      legGroup.add(screw);
+
+      launchPod.add(legGroup);
+    }
+
+    /* ── Slew Bearing Ring ── */
+    const slewRing = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 0.9, 0.16, 32), darkMat);
+    slewRing.position.y = tripodCenterY + 0.25;
     slewRing.castShadow = true;
     launchPod.add(slewRing);
 
-    /* ── Turret yaw group — everything below traverses to face the target ── */
+    /* ── Turret Yaw Group ── */
     const turretYaw = new THREE.Group();
-    turretYaw.position.set(0, yBase + 0.78, 0);
+    turretYaw.position.set(0, tripodCenterY + 0.33, 0);
     launchPod.add(turretYaw);
 
-    const turretBody = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.8, 1.6), hullMat);
-    turretBody.position.set(0, 0.4, -0.1);
-    turretBody.castShadow = true; turretBody.receiveShadow = true;
-    turretYaw.add(turretBody);
+    // Turret swivel base on tripod hub
+    const turretBase = new THREE.Mesh(new THREE.CylinderGeometry(0.82, 0.85, 0.3, 24), hullMat);
+    turretBase.position.y = 0.15;
+    turretBase.castShadow = true; turretBase.receiveShadow = true;
+    turretYaw.add(turretBase);
 
-    // Sloped glacis front plate, angled toward the direction of fire (+Z)
-    const glacis = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.6, 0.5), armorMat);
-    glacis.position.set(0, 0.5, 0.72);
-    glacis.rotation.x = -0.4;
-    glacis.castShadow = true;
-    turretYaw.add(glacis);
+    // Side mounting pillars for elevation trunnions
+    [-0.72, 0.72].forEach((tx) => {
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.75, 0.7), hullMat);
+      pillar.position.set(tx, 0.55, 0.3);
+      pillar.castShadow = true;
+      turretYaw.add(pillar);
 
-    // Hazard stripe band + hatch detail
-    const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.09, 1.62), hazardMat);
-    stripe.position.set(0, 0.12, -0.1);
-    turretYaw.add(stripe);
-    const hatch = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.06, 16), darkMat);
-    hatch.position.set(-0.3, 0.82, -0.4);
-    turretYaw.add(hatch);
-
-    // Optical/EO sighting turret on the roof
-    const eoBall = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 12), glassMat);
-    eoBall.position.set(0.55, 0.85, 0.25);
-    turretYaw.add(eoBall);
-
-    // Trunnion bearings either side of the elevation cradle
-    [-0.85, 0.85].forEach((tx) => {
-      const trun = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.28, 12), darkMat);
-      trun.rotation.z = Math.PI / 2;
-      trun.position.set(tx, 0.82, 0.55);
-      trun.castShadow = true;
-      turretYaw.add(trun);
+      const trunCap = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.28, 16), darkMat);
+      trunCap.rotation.z = Math.PI / 2;
+      trunCap.position.set(tx, 0.82, 0.3);
+      trunCap.castShadow = true;
+      turretYaw.add(trunCap);
     });
 
-    /* ── Elevation cradle group — pitches up to the firing angle ── */
+    // Central avionics housing box
+    const eBox = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.45, 0.8), darkMat);
+    eBox.position.set(0, 0.4, 0.1);
+    eBox.castShadow = true;
+    turretYaw.add(eBox);
+
+    // Hazard stripe trim on front
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.08, 0.82), hazardMat);
+    stripe.position.set(0, 0.22, 0.1);
+    turretYaw.add(stripe);
+
+    /* ── Elevation Cradle Group ── */
     const elevGroup = new THREE.Group();
-    elevGroup.position.set(0, 0.82, 0.55);
+    elevGroup.position.set(0, 0.82, 0.3);
     elevGroup.rotation.x = -ELEV_ANGLE;
     turretYaw.add(elevGroup);
 
-    // Cradle side rails running the length of the tubes
-    [-0.62, 0.62].forEach((cx) => {
-      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.22, TUBE_LEN + 0.5), darkMat);
+    // Cradle frame & longitudinal mounting rails
+    [-0.58, 0.58].forEach((cx) => {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, TUBE_LEN + 0.4), darkMat);
       rail.position.set(cx, -0.05, TUBE_LEN / 2);
       rail.castShadow = true;
       elevGroup.add(rail);
     });
 
-    // ── Launch tubes — two side-by-side canisters, large enough to fully
-    // shroud the rocket body (only the nose section shows at the mouth).
-    // Tube 0 (right) is the live/loaded tube; tube 1 (left) is a spare.
+    // Twin hydraulic elevation cylinders
+    [-0.45, 0.45].forEach((rx) => {
+      const ram = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.9, 10), chromeMat);
+      ram.position.set(rx, -0.38, 0.15);
+      ram.rotation.x = -ELEV_ANGLE * 0.5;
+      turretYaw.add(ram);
+    });
+
+    // ── Launch Tubes (Canisters) ──
     const tubeXOffsets = [0.34, -0.34];
     tubeXOffsets.forEach((tx, idx) => {
+      // Cylindrical Launch Canister
       const outerTube = new THREE.Mesh(
-        new THREE.CylinderGeometry(TUBE_OUTER_R, TUBE_OUTER_R * 1.04, TUBE_LEN, 24, 1, false),
+        new THREE.CylinderGeometry(TUBE_OUTER_R, TUBE_OUTER_R * 1.03, TUBE_LEN, 24, 1, false),
         hullMat
       );
       outerTube.rotation.x = Math.PI / 2;
@@ -503,7 +486,7 @@ const SIM = (() => {
       outerTube.castShadow = true;
       elevGroup.add(outerTube);
 
-      // Dark interior bore so the open mouth reads as hollow, not solid
+      // Bore liner
       const bore = new THREE.Mesh(
         new THREE.CylinderGeometry(TUBE_INNER_R, TUBE_INNER_R, TUBE_LEN - 0.06, 20, 1, true),
         boreMat
@@ -512,30 +495,28 @@ const SIM = (() => {
       bore.position.set(tx, 0, TUBE_LEN / 2);
       elevGroup.add(bore);
 
-      // Muzzle rim + breach cap
-      const muzzleRim = new THREE.Mesh(new THREE.TorusGeometry(TUBE_OUTER_R * 0.94, 0.045, 8, 28), darkMat);
+      // Muzzle collar and breach cap
+      const muzzleRim = new THREE.Mesh(new THREE.TorusGeometry(TUBE_OUTER_R * 0.95, 0.048, 10, 28), darkMat);
       muzzleRim.position.set(tx, 0, TUBE_LEN);
       elevGroup.add(muzzleRim);
-      const breachCap = new THREE.Mesh(new THREE.CylinderGeometry(TUBE_OUTER_R * 0.92, TUBE_OUTER_R * 0.92, 0.1, 20), darkMat);
+
+      const breachCap = new THREE.Mesh(new THREE.CylinderGeometry(TUBE_OUTER_R * 0.94, TUBE_OUTER_R * 0.94, 0.12, 20), darkMat);
       breachCap.rotation.x = Math.PI / 2;
       breachCap.position.set(tx, 0, 0.02);
       elevGroup.add(breachCap);
 
-      // Reinforcement bands along the tube
+      // Reinforcement collars & hazard rings
       for (let b = 0; b < 4; b++) {
-        const band = new THREE.Mesh(new THREE.TorusGeometry(TUBE_OUTER_R * 1.02, 0.032, 8, 24), darkMat);
-        band.position.set(tx, 0, 0.35 + b * (TUBE_LEN - 0.7) / 3);
+        const band = new THREE.Mesh(new THREE.TorusGeometry(TUBE_OUTER_R * 1.02, 0.035, 8, 24), darkMat);
+        band.position.set(tx, 0, 0.4 + b * (TUBE_LEN - 0.8) / 3);
         elevGroup.add(band);
       }
 
-      // Stencilled hazard tip ring near the mouth
-      const tipRing = new THREE.Mesh(new THREE.TorusGeometry(TUBE_OUTER_R * 1.0, 0.05, 6, 24), hazardMat);
+      const tipRing = new THREE.Mesh(new THREE.TorusGeometry(TUBE_OUTER_R * 1.01, 0.04, 6, 24), hazardMat);
       tipRing.position.set(tx, 0, TUBE_LEN - 0.35);
       elevGroup.add(tipRing);
 
-      // The right-hand tube (idx 0) is the live tube: remember an invisible
-      // breach-reference point so we can derive the loaded rocket's world
-      // position/orientation once the whole hierarchy's matrices are current.
+      // Reference point for rocket placement in Tube 0
       if (idx === 0) {
         const breachPoint = new THREE.Object3D();
         breachPoint.position.set(tx, 0, 0);
@@ -544,42 +525,87 @@ const SIM = (() => {
       }
     });
 
-    // Cross-brace between the two tubes
+    // Structural tie-bars between tubes
     for (let b = 0; b < 3; b++) {
-      const brace = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.05, 0.09), darkMat);
-      brace.position.set(0, 0, 0.4 + b * (TUBE_LEN - 0.8) / 2);
+      const brace = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.06, 0.1), darkMat);
+      brace.position.set(0, 0, 0.5 + b * (TUBE_LEN - 0.9) / 2);
       elevGroup.add(brace);
     }
 
-    // Elevation actuator ram (visual detail, connects cradle to turret body)
-    const ram = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.0, 8), darkMat);
-    ram.position.set(0, -0.55, 0.05);
-    ram.rotation.x = -ELEV_ANGLE * 0.6;
-    turretYaw.add(ram);
+    /* ── REALISTIC FIRE-CONTROL RADAR SYSTEM ── */
+    const radarMast = new THREE.Group();
+    radarMast.position.set(-0.95, 0.25, -0.45);
 
-    /* ── Fire-control radar mast, mounted on the turret so it slews with it ── */
-    const radarBoom = new THREE.Group();
-    radarBoom.position.set(-0.85, 0.4, -0.55);
-    const boomPole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 1.1, 8), hullMat);
-    boomPole.position.y = 0.55;
-    boomPole.castShadow = true;
-    radarBoom.add(boomPole);
+    // Mast pedestal & gear housing
+    const mastBase = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 1.2, 12), darkMat);
+    mastBase.position.y = 0.6;
+    mastBase.castShadow = true;
+    radarMast.add(mastBase);
 
-    const dishGeo = new THREE.SphereGeometry(0.4, 18, 14, 0, Math.PI * 2, 0, Math.PI * 0.55);
-    const dishMat = new THREE.MeshStandardMaterial({ color: 0x6a7a70, roughness: 0.4, metalness: 0.7, side: THREE.DoubleSide });
-    radarDish = new THREE.Mesh(dishGeo, dishMat);
-    radarDish.position.y = 1.15;
-    radarDish.rotation.x = -Math.PI * 0.45;
-    radarBoom.add(radarDish);
+    // Radar Azimuth Rotator Head (`radarDish` continuously rotates around Y-axis)
+    radarDish = new THREE.Group();
+    radarDish.position.set(0, 1.25, 0);
+    radarMast.add(radarDish);
 
-    const feedHorn = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.04, 0.22, 8), blackMat);
-    feedHorn.position.set(0, 0.92, 0.28);
-    feedHorn.rotation.x = 0.4;
-    radarBoom.add(feedHorn);
+    // Rotator hub motor box
+    const motorBox = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.22, 0.3), radomeMat);
+    motorBox.castShadow = true;
+    radarDish.add(motorBox);
 
-    turretYaw.add(radarBoom);
+    // Radar dish back-frame & yoke arm
+    const yokeArm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.35, 0.25), darkMat);
+    yokeArm.position.set(0, 0.2, -0.05);
+    yokeArm.rotation.x = -0.15;
+    radarDish.add(yokeArm);
 
-    /* ── Traverse the turret to face the drone swarm ── */
+    // Realistic Parabolic Dish Reflector Mesh
+    const dishReflectorGeo = new THREE.SphereGeometry(0.52, 24, 18, 0, Math.PI * 2, 0, Math.PI * 0.42);
+    const dishReflector = new THREE.Mesh(dishReflectorGeo, dishMat);
+    dishReflector.position.set(0, 0.38, 0.12);
+    dishReflector.rotation.x = -Math.PI * 0.42; // Tilted upwards towards sky
+    dishReflector.castShadow = true;
+    radarDish.add(dishReflector);
+
+    // Dish rear structural reinforcement ribs
+    for (let r = 0; r < 4; r++) {
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.5, 0.12), darkMat);
+      rib.rotation.z = (r / 4) * Math.PI;
+      rib.position.set(0, 0.38, 0.05);
+      radarDish.add(rib);
+    }
+
+    // Feedhorn focal support tripod (3 struts holding transceiver horn)
+    for (let s = 0; s < 3; s++) {
+      const strutAngle = (s / 3) * Math.PI * 2;
+      const fStrut = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.45, 6), darkMat);
+      fStrut.position.set(Math.sin(strutAngle) * 0.18, 0.38 + Math.cos(strutAngle) * 0.18, 0.22);
+      fStrut.rotation.x = 0.6;
+      fStrut.rotation.z = -strutAngle * 0.5;
+      radarDish.add(fStrut);
+    }
+
+    // Feedhorn Transceiver / Waveguide Box
+    const feedHorn = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.05, 0.15, 10), radomeMat);
+    feedHorn.position.set(0, 0.38, 0.42);
+    feedHorn.rotation.x = Math.PI / 2;
+    radarDish.add(feedHorn);
+
+    // Counterweight at rear of dish
+    const counterWeight = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, 0.12), darkMat);
+    counterWeight.position.set(0, 0.35, -0.22);
+    radarDish.add(counterWeight);
+
+    // Radar active status green LED indicator
+    const radarLED = new THREE.Mesh(
+      new THREE.SphereGeometry(0.025, 8, 8),
+      new THREE.MeshBasicMaterial({ color: 0x00ff66 })
+    );
+    radarLED.position.set(0, 0.68, 0.1);
+    radarDish.add(radarLED);
+
+    turretYaw.add(radarMast);
+
+    /* ── Traverse Turret to Face Drone Swarm Target ── */
     const toSwarmFlat = new THREE.Vector3(droneSwarmCenter.x - podBasePos.x, 0, droneSwarmCenter.z - podBasePos.z);
     const yaw = toSwarmFlat.lengthSq() > 1e-6 ? Math.atan2(toSwarmFlat.x, toSwarmFlat.z) : 0;
     turretYaw.rotation.y = yaw;
@@ -590,10 +616,7 @@ const SIM = (() => {
       Math.cos(yaw) * Math.cos(ELEV_ANGLE)
     ).normalize();
 
-    // Resolve the live tube's breach position in world space now that the
-    // turret's yaw/elevation transforms are set, then place the loaded
-    // rocket's centre forward of the breach by exactly the tail offset —
-    // this is also where the rocket starts its flight when fired.
+    // Resolve launch origin from Tube 0 breach point
     launchPod.updateMatrixWorld(true);
     const breachWorld = new THREE.Vector3();
     elevGroup.userData.breachPoint.getWorldPosition(breachWorld);
@@ -602,7 +625,6 @@ const SIM = (() => {
 
   /* ════════════════════════════════════
      ROCKET - detailed geometry
-     840mm = 0.84 units, scaled *10 for scene
   ════════════════════════════════════ */
   function buildRocket() {
     rocketGroup = new THREE.Group();
@@ -613,38 +635,19 @@ const SIM = (() => {
     const noseMat  = new THREE.MeshStandardMaterial({ color: 0x334455, roughness: 0.18, metalness: 0.9 });
     const nozzleMat= new THREE.MeshStandardMaterial({ color: 0x1a2028, roughness: 0.3, metalness: 0.95 });
 
-    // Rocket total length: 840mm. In scene units (*10): 8.4 units.
-    // Sections:
-    //   Nose tip: hemisphere r=0.45 units (45mm radius)
-    //   Forward body: from y=0 to y=5.4 (540mm)
-    //   Engine section: y=-3.0 to y=0 (300mm)
-    // Coords: nose tip at +4.2, tail at -4.2, body centre at 0
-
-    // ── Nose - hemisphere
-    //const noseGeo = new THREE.SphereGeometry(0.45, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.5);
-    //const nose = new THREE.Mesh(noseGeo, noseMat);
-    //nose.position.y = 4.2;
-    //nose.rotation.x = Math.PI;
-    //nose.castShadow = true;
-    //rocketGroup.add(nose);
-
-        // ── Hemispherical Nose Cone (Radius = 0.45, matching the body width)
-    // Capped at half a sphere (Math.PI * 0.5) to form a clean dome profile
+    // ── Hemispherical Nose Cone
     const noseGeo = new THREE.SphereGeometry(0.45, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.5);
     const nose = new THREE.Mesh(noseGeo, noseMat);
-    // Positioned exactly on top of the forward cylinder body
     nose.position.y = 3.3; 
     nose.castShadow = true;
     rocketGroup.add(nose);
 
-    // ── Forward body (540mm)
+    // ── Forward body
     const bodyGeo = new THREE.CylinderGeometry(0.45, 0.45, 5.4, 24);
     const body = new THREE.Mesh(bodyGeo, bodyMat);
-    // Centered at y=0.6 so that its top edge hits exactly y=3.3 (where the hemisphere starts)
     body.position.y = 0.6; 
     body.castShadow = true;
     rocketGroup.add(body);
-
 
     // Paint stripe / panel lines on body
     const stripe1 = new THREE.Mesh(
@@ -663,10 +666,10 @@ const SIM = (() => {
     wring.rotation.x = Math.PI / 2;
     rocketGroup.add(wring);
 
-    // ── Engine section (300mm)
+    // ── Engine section
     const engGeo = new THREE.CylinderGeometry(0.45, 0.42, 3.0, 24);
     const eng = new THREE.Mesh(engGeo, engineMat);
-    eng.position.y = -3.6;  // centre of -2.1 to -5.1 = -3.6
+    eng.position.y = -3.6;
     eng.castShadow = true;
     rocketGroup.add(eng);
 
@@ -685,7 +688,6 @@ const SIM = (() => {
     const nozzlePts = [];
     for (let i = 0; i <= 24; i++) {
       const t = i / 24;
-      // Bell: starts at 0.35, throat 0.2, exit 0.32
       let r;
       if (t < 0.4) { r = 0.35 - t * 0.375; }
       else { r = 0.05 + Math.pow((t - 0.4) / 0.6, 0.6) * 0.3; }
@@ -696,28 +698,23 @@ const SIM = (() => {
     nozzle.castShadow = true;
     rocketGroup.add(nozzle);
 
-    // ── FIXED FINS * 4 - clipped delta, forward of engine section
-    // Control fins sit at 0°, 90°, 180°, 270°.
-    // Fixed fins are staggered 45° between them: 45°, 135°, 225°, 315°.
+    // ── FIXED FINS * 4 - clipped delta
     for (let i = 0; i < 4; i++) {
-      const orbitalAngle = (i / 4) * Math.PI * 2; // 0°, 90°, 180°, 270°
+      const orbitalAngle = (i / 4) * Math.PI * 2;
       const fxGrp = new THREE.Group();
       fxGrp.position.y = -2.6;
-      fxGrp.rotation.y = orbitalAngle; // rotate the group around the rocket axis
-      const fin = makeFixedFin(finMat);  // fin geometry points outward along +X inside the group
+      fxGrp.rotation.y = orbitalAngle;
+      const fin = makeFixedFin(finMat);
       fxGrp.add(fin);
       rocketGroup.add(fxGrp);
     }
 
-    // ── CONTROL FINS * 4 - rectangular, all-moving, at aft section
-    // Sit at 0°, 90°, 180°, 270° - interleaved with fixed fins above
-   // ── CONTROL FINS * 4 - rectangular, all-moving, at aft section
-    // Sit at 0°, 90°, 180°, 270° - interleaved with fixed fins above
+    // ── CONTROL FINS * 4 - rectangular, all-moving
     const ctrlFinGroups = [];
     for (let i = 0; i < 4; i++) {
-      const orbitalAngle = (i / 4) * Math.PI * 2; // 0°, 90°, 180°, 270°
+      const orbitalAngle = (i / 4) * Math.PI * 2;
       const cfGrp = new THREE.Group();
-      cfGrp.rotation.order = 'YXZ'; // <-- Ensures deflection rotates around the fin's radial shaft
+      cfGrp.rotation.order = 'YXZ';
       cfGrp.position.y = -4.6;
       cfGrp.rotation.y = orbitalAngle;
       const fin = makeCtrlFin(finMat);
@@ -727,7 +724,7 @@ const SIM = (() => {
     }
     rocketGroup._ctrlFins = ctrlFinGroups;
 
-    // ── Engine flame - multi-layer
+    // ── Engine flame
     const flameMat1 = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 });
     const flameMat2 = new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.75 });
     const flameMat3 = new THREE.MeshBasicMaterial({ color: 0xff3300, transparent: true, opacity: 0.5, side: THREE.BackSide });
@@ -756,54 +753,46 @@ const SIM = (() => {
     engineLight.visible = false;
     rocketGroup.add(engineLight);
 
-        rocketGroup.scale.setScalar(1.0); // Already in scene units *10
+    rocketGroup.scale.setScalar(1.0);
     rocketPos.copy(launchOrigin);
     rocketGroup.position.copy(rocketPos);
 
-    // Align the rocket with the launch tube's bore so it sits correctly
-    // loaded inside it (nose poking out the mouth) from the moment it's built.
     const initialQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), launchDir);
     rocketGroup.quaternion.copy(initialQuat);
 
     scene.add(rocketGroup);
-    rocketGroup.visible = true; // loaded and visible in the tube even before firing
+    rocketGroup.visible = true;
 
     return ctrlFinGroups;
   }
 
-
-    function makeFixedFin(mat) {
-    // Clipped delta: a straight, swept leading edge and a straight, forward-
-    // raked trailing edge that both terminate at a short tip chord (the tip
-    // is "clipped" flat rather than coming to a point like a full delta).
-    //   x = span outward from the body surface, y = position along the rocket axis.
-    const ROOT_LE_Y = 0.78;   // root leading edge (forward-most, at the body)
-    const ROOT_TE_Y = -0.62;  // root trailing edge (aft-most, at the body)  -> root chord 1.40
-    const TIP_LE_Y  = 0.18;   // tip leading edge (swept aft from the root)
-    const TIP_TE_Y  = -0.22;  // tip trailing edge (swept forward from the root) -> tip chord 0.40
-    const SPAN      = 1.0;    // outer tip span (100mm), matches the original silhouette size
+  function makeFixedFin(mat) {
+    const ROOT_LE_Y = 0.78;
+    const ROOT_TE_Y = -0.62;
+    const TIP_LE_Y  = 0.18;
+    const TIP_TE_Y  = -0.22;
+    const SPAN      = 1.0;
 
     const shape = new THREE.Shape();
     shape.moveTo(0,    ROOT_LE_Y);
-    shape.lineTo(SPAN, TIP_LE_Y);   // swept leading edge
-    shape.lineTo(SPAN, TIP_TE_Y);   // clipped tip chord
-    shape.lineTo(0,    ROOT_TE_Y);  // swept trailing edge
-    shape.lineTo(0,    ROOT_LE_Y);  // root chord, closing the shape
+    shape.lineTo(SPAN, TIP_LE_Y);
+    shape.lineTo(SPAN, TIP_TE_Y);
+    shape.lineTo(0,    ROOT_TE_Y);
+    shape.lineTo(0,    ROOT_LE_Y);
     const ext = { depth: 0.07, bevelEnabled: true, bevelSize: 0.014, bevelThickness: 0.014, bevelSegments: 2 };
     const geo = new THREE.ExtrudeGeometry(shape, ext);
     const fin = new THREE.Mesh(geo, mat);
-    // Offset root so fin starts at body surface (radius ≈ 0.45)
     fin.position.set(0.45, 0, -0.035);
     fin.castShadow = true;
     return fin;
   }
 
-    function makeCtrlFin(mat) {
+  function makeCtrlFin(mat) {
     const shape = new THREE.Shape();
     shape.moveTo(0,    0);
     shape.lineTo(0,    0.7);
-    shape.lineTo(1.0,  0.7);    // <-- EXACTLY 1.0 units (100mm) span width
-    shape.lineTo(1.0,  0);      // <-- EXACTLY 1.0 units (100mm) span width
+    shape.lineTo(1.0,  0.7);
+    shape.lineTo(1.0,  0);
     shape.lineTo(0,    0);
     const ext = { depth: 0.06, bevelEnabled: true, bevelSize: 0.012, bevelThickness: 0.012, bevelSegments: 2 };
     const geo = new THREE.ExtrudeGeometry(shape, ext);
@@ -817,20 +806,8 @@ const SIM = (() => {
      DRONE SWARM - placed far away
   ════════════════════════════════════ */
   function buildDroneSwarm() {
-    // Placed a long way out (~210 units) so the missile's flight has plenty
-    // of runway for the engine / aerofoil / tracking stages to each get
-    // real screen time before final approach.
-    // Altitude raised well above the mountain ridge-line (~45-60 units at
-    // this bearing) so the swarm silhouettes cleanly against open sky
-    // instead of camouflaging against the rock backdrop.
     const swarmCenter = new THREE.Vector3(150, 78, -130);
     droneSwarmCenter.copy(swarmCenter);
-
-    const offsets = [
-      [0,0,0],[4,1.5,-2],[-3,2,2],[2,-2,4],[-2,3,-3],
-      [6,-1,3],[-4,-2,-3],[3,3.5,-4],[-2,-3,3],[5,2,2],
-      [-5,1,-1],[1,-1.5,-5],[3.5,2.5,1],[-1,3.5,3]
-    ].map(arr => arr.map ? arr : [0,0,0]);
 
     const droneOffsets = [
       [0,0,0],[4,1.5,-2],[-3,2,2],[2,-2,4],[-2,3,-3],
@@ -842,8 +819,6 @@ const SIM = (() => {
       const drone = buildDetailedDrone();
       drone.position.set(swarmCenter.x + dx, swarmCenter.y + dy, swarmCenter.z + dz);
       drone._basePos = drone.position.clone();
-      // Slow centre-of-formation drift (unrelated to the whole-swarm dive,
-      // which is applied identically to every drone in updateDrones).
       drone._dynamicBase = drone.position.clone();
       drone._vel = new THREE.Vector3(
         (Math.random() - 0.5) * 0.02,
@@ -867,21 +842,21 @@ const SIM = (() => {
     const ledMatR  = new THREE.MeshBasicMaterial({ color: 0xff2200 });
     const ledMatG  = new THREE.MeshBasicMaterial({ color: 0x00ff66 });
 
-    // Centre frame plate
+    // Frame
     const frame = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.08, 0.35), frameMat);
     group.add(frame);
 
-    // Battery pack
+    // Battery
     const battery = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.07, 0.28), new THREE.MeshStandardMaterial({ color: 0x223344, roughness: 0.6, metalness: 0.5 }));
     battery.position.y = -0.07;
     group.add(battery);
 
-    // Flight controller board
+    // Board
     const fcb = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.012, 0.1), new THREE.MeshStandardMaterial({ color: 0x1a3a1a, roughness: 0.5, metalness: 0.4 }));
     fcb.position.y = 0.05;
     group.add(fcb);
 
-    // 4 Arms + motor + propeller
+    // 4 Arms
     const armDirs = [[1, 0, 1], [-1, 0, 1], [1, 0, -1], [-1, 0, -1]];
     armDirs.forEach(([ax, ay, az], idx) => {
       const armLen = 0.45;
@@ -892,18 +867,15 @@ const SIM = (() => {
       arm.castShadow = true;
       group.add(arm);
 
-      // Motor bell
       const motor = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.05, 0.06, 10), armMat);
       motor.position.set(ax * armLen, 0.04, az * armLen);
       motor.castShadow = true;
       group.add(motor);
 
-      // Prop disc (thin translucent cylinder)
       const prop = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.005, 12), propMat);
       prop.position.set(ax * armLen, 0.08, az * armLen);
       group.add(prop);
 
-      // Prop blades
       for (let b = 0; b < 2; b++) {
         const blade = new THREE.Mesh(
           new THREE.BoxGeometry(0.32, 0.004, 0.04),
@@ -914,13 +886,12 @@ const SIM = (() => {
         group.add(blade);
       }
 
-      // LEDs
       const led = new THREE.Mesh(new THREE.SphereGeometry(0.012, 6, 6), idx < 2 ? ledMatR : ledMatG);
       led.position.set(ax * armLen, 0, az * armLen);
       group.add(led);
     });
 
-    // FPV camera turret
+    // Camera
     const camTurret = new THREE.Group();
     camTurret.position.set(0, -0.04, 0.16);
     const camBody = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.065), camMat);
@@ -940,16 +911,12 @@ const SIM = (() => {
     return group;
   }
 
-  /* ════════════════════════════════════
-     TRAIL PARTICLES  (disabled)
-  ════════════════════════════════════ */
   function spawnTrail() { /* trail removed */ }
 
   /* ════════════════════════════════════
      INTERCEPT EFFECTS
   ════════════════════════════════════ */
   function spawnHardKillExplosion(center) {
-    // Primary fireball
     for (let i = 0; i < 350; i++) {
       const size = 0.06 + Math.random() * 0.22;
       const geo = new THREE.SphereGeometry(size, 5, 5);
@@ -970,7 +937,6 @@ const SIM = (() => {
       explosionParticles.push(p);
     }
 
-    // Debris shards
     for (let i = 0; i < 80; i++) {
       const shard = new THREE.Mesh(
         new THREE.BoxGeometry(0.05 + Math.random() * 0.1, 0.05 + Math.random() * 0.08, 0.02),
@@ -990,7 +956,6 @@ const SIM = (() => {
       explosionParticles.push(shard);
     }
 
-    // Smoke puffs
     for (let i = 0; i < 40; i++) {
       const r = 0.4 + Math.random() * 0.8;
       const geo = new THREE.SphereGeometry(r, 8, 8);
@@ -1011,7 +976,6 @@ const SIM = (() => {
       explosionParticles.push(p);
     }
 
-    // Flash lights
     const flash1 = new THREE.PointLight(0xffffff, 30, 40);
     flash1.position.copy(center);
     flash1._life = 1; flash1._decay = 3; flash1.isLight = true;
@@ -1026,7 +990,6 @@ const SIM = (() => {
   }
 
   function spawnSoftKillFibers(center) {
-    // Carbon fiber burst - thin filaments
     for (let i = 0; i < 500; i++) {
       const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
       const dist = 1 + Math.random() * 5;
@@ -1047,7 +1010,6 @@ const SIM = (() => {
       fiberParticles.push(line);
     }
 
-    // Soft blue flash
     const flash = new THREE.PointLight(0x44aaff, 12, 35);
     flash.position.copy(center);
     scene.add(flash);
@@ -1072,21 +1034,17 @@ const SIM = (() => {
   ════════════════════════════════════ */
   function updateRadar(dt) {
     if (!radarDish) return;
-    radarDish.rotation.z += dt * 1.8;
+    // Continuous 360-degree azimuth rotation of the realistic parabolic dish antenna
+    radarDish.rotation.y += dt * 2.2;
     if (radarScanRing) {
-      radarScanAngle += dt * 1.8;
+      radarScanAngle += dt * 2.2;
       radarScanRing.rotation.z = radarScanAngle;
     }
   }
 
   function updateDrones(dt) {
-    // Freeze the whole engagement while the missile is between staged pauses.
     const paused = rocketPaused && simState === 'flight';
 
-    // Phase transitions are driven by rocket distance fraction (same system as
-    // STAGE_FRACTIONS / panel animations), so the swarm manoeuvre is always
-    // spatially coupled to the missile's progress, not wall-clock time.
-    // Drones don't move at all until the rocket has been fired.
     if (rocketFired && totalFlightDistance > 0) {
       const frac = distanceTraveled / totalFlightDistance;
       if (dronePhase === 0 && frac >= DRONE_STRAFE_START) {
@@ -1096,7 +1054,7 @@ const SIM = (() => {
       }
     }
 
-    const ADVANCE_SPEED = 5; // units per second
+    const ADVANCE_SPEED = 5;
 
     drones.forEach((drone, i) => {
       if (!drone._alive) {
@@ -1109,35 +1067,29 @@ const SIM = (() => {
         return;
       }
 
-      // Hold position until rocket is fired, and during staged pauses
       if (!rocketFired || paused) return;
 
       const step = ADVANCE_SPEED * dt;
 
       if (dronePhase === 0 || dronePhase === 2) {
-        // Fly straight forward
         drone._dynamicBase.x += _swarmFwd.x * step;
         drone._dynamicBase.z += _swarmFwd.z * step;
       } else {
-        // Phase 1: strafe right — move along _swarmRight, altitude stays flat
         drone._dynamicBase.x += _swarmRight.x * step;
         drone._dynamicBase.z += _swarmRight.z * step;
       }
 
-      // Altitude stays constant — each drone holds its formation Y slot
       const offsetY = drone._basePos.y - DRONE_START_ALT;
       drone.position.x = drone._dynamicBase.x;
       drone.position.z = drone._dynamicBase.z;
       drone.position.y = DRONE_START_ALT + offsetY;
 
-      // Always face the forward direction; no pitch or roll
       drone.rotation.order = 'YXZ';
       drone.rotation.y = Math.atan2(_swarmFwd.x, _swarmFwd.z);
       drone.rotation.x = 0;
       drone.rotation.z = 0;
     });
 
-    // Lock the guidance target to the swarm's live formation centre.
     if (drones.length > 0) {
       let cx = 0, cy = 0, cz = 0, count = 0;
       for (let i = 0; i < drones.length; i++) {
@@ -1151,9 +1103,6 @@ const SIM = (() => {
   }
 
   function idleMotorEffects() {
-    // Motor keeps burning while the airframe is held still: flame flicker
-    // and exhaust trail continue exactly as in normal flight so a hold
-    // never looks like a freeze-frame.
     if (engineFlame) {
       const f1 = 0.82 + Math.random() * 0.36;
       const f2 = 0.88 + Math.random() * 0.24;
@@ -1171,18 +1120,15 @@ const SIM = (() => {
     if (interceptDone) return;
 
     if (rocketPaused) {
-      // Explicit hold between animation stages (user hasn't tapped "next stage" yet).
       idleMotorEffects();
       return;
     }
 
-    // Direct pursuit with clamped turn rate -- guaranteed convergence
     const toTarget = droneSwarmCenter.clone().sub(rocketPos);
     const dist = toTarget.length();
     const desiredDir = toTarget.clone().normalize();
     const currentDir = rocketVel.clone().normalize();
 
-    // Rotate current heading toward desired by max turn rate (rad/s)
     const maxTurnRate = dist > 20 ? 4.0 : 8.0;
     const maxTurn = maxTurnRate * dt;
     const dot = Math.min(1, Math.max(-1, currentDir.dot(desiredDir)));
@@ -1195,17 +1141,13 @@ const SIM = (() => {
       newDir = currentDir.clone().lerp(desiredDir, t).normalize();
     }
 
-    // Accelerate along new direction
     const maxSpeed = 8;
     const spd = Math.min(rocketVel.length() + 3 * dt, maxSpeed);
     rocketVel.copy(newDir).multiplyScalar(spd);
 
-
     rocketPos.add(rocketVel.clone().multiplyScalar(dt));
     rocketGroup.position.copy(rocketPos);
 
-    // Track distance actually flown and fire staged checkpoints at even
-    // fractions of the total launch-to-target distance.
     distanceTraveled += spd * dt;
     if (nextCheckpointIdx < STAGE_FRACTIONS.length &&
         distanceTraveled >= totalFlightDistance * STAGE_FRACTIONS[nextCheckpointIdx]) {
@@ -1215,53 +1157,25 @@ const SIM = (() => {
       if (onStageCb) onStageCb(reachedIdx);
     }
 
-    // Orient rocket along velocity — roll-stabilised so the body doesn't spin
-    // around its own axis as the heading changes.
-    // Strategy: build an explicit rotation matrix from (right, up, forward) axes
-    // where "up" is anchored to world Y as much as possible, eliminating the
-    // free roll degree of freedom that setFromUnitVectors leaves unconstrained.
     const dir = rocketVel.clone().normalize();
     {
-      // fwd = velocity direction (rocket body Y points along this)
       const fwd = dir;
-      // Choose a world-up reference; fall back to world-Z if rocket points straight up
       const worldUp = (Math.abs(fwd.y) > 0.99)
         ? new THREE.Vector3(0, 0, 1)
         : new THREE.Vector3(0, 1, 0);
-      // right = fwd × worldUp, then re-orthogonalise up
       const right = new THREE.Vector3().crossVectors(fwd, worldUp).normalize();
       const up    = new THREE.Vector3().crossVectors(right, fwd).normalize();
-      // Build rotation matrix: columns are right, fwd, up mapped to X, Y, Z
       const m = new THREE.Matrix4().makeBasis(right, fwd, up);
       const targetQuat = new THREE.Quaternion().setFromRotationMatrix(m);
       rocketGroup.quaternion.slerp(targetQuat, Math.min(dt * 12, 1));
     }
 
-    // ── Realistic control-fin deflection ────────────────────────────────────
-    // Decompose the guidance error into the rocket's local pitch and yaw axes,
-    // then deflect each fin by the component of that error it can correct.
-    //
-    // Each cfGrp is orbited at angle theta around the rocket (body) Y-axis:
-    //   fin 0 = 0 deg  (e.g. "top"    in body frame)
-    //   fin 1 = 90 deg ("right")
-    //   fin 2 = 180 deg ("bottom")
-    //   fin 3 = 270 deg ("left")
-    //
-    // The fin's hinge is spanwise (local X of the group after orbital rotation).
-    // Rotating the fin mesh around its local X deflects it to generate a side
-    // force in the plane perpendicular to that fin's span.
-    //
-    // For a desired turn direction expressed as (pitchErr, yawErr) in rocket-
-    // local space, the correct deflection for fin i is:
-    //   delta_i = pitchErr * cos(theta_i) + yawErr * sin(theta_i)
-    // — exactly the projection of the commanded moment onto each fin's axis.
-   if (rocketGroup._ctrlFins) {
+    if (rocketGroup._ctrlFins) {
       const bodyFwd = currentDir.clone();
       const worldUp = (Math.abs(bodyFwd.y) > 0.99) ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
       const bodyRight = new THREE.Vector3().crossVectors(bodyFwd, worldUp).normalize();
       const bodyUp    = new THREE.Vector3().crossVectors(bodyRight, bodyFwd).normalize();
 
-      // Steering cross-product vector
       const rotAxis = new THREE.Vector3().crossVectors(currentDir, desiredDir);
       const pitchCmd = THREE.MathUtils.clamp(rotAxis.dot(bodyRight) * 120, -0.5, 0.5);
       const yawCmd   = THREE.MathUtils.clamp(-rotAxis.dot(bodyUp)   * 120, -0.5, 0.5);
@@ -1272,7 +1186,6 @@ const SIM = (() => {
       });
     }
 
-    // Flame flicker
     if (engineFlame) {
       const f1 = 0.82 + Math.random() * 0.36;
       const f2 = 0.88 + Math.random() * 0.24;
@@ -1287,14 +1200,6 @@ const SIM = (() => {
 
     trajectoryPoints.push(rocketPos.clone());
 
-    // Intercept check -- uses the distance AFTER this frame's movement was
-    // applied (not the pre-move `dist` computed above), otherwise the
-    // missile flies one extra frame past the trigger threshold before the
-    // hit registers, which reads as a visible overshoot. Also checks
-    // proximity to the nearest individual drone (they're spread several
-    // units out from the centroid), so the hit registers as soon as the
-    // missile reaches the edge of the formation rather than requiring it
-    // to fly all the way through to the exact geometric center.
     const distAfterMove = droneSwarmCenter.distanceTo(rocketPos);
     let nearestDroneDist = distAfterMove;
     for (let i = 0; i < drones.length; i++) {
@@ -1324,7 +1229,6 @@ const SIM = (() => {
   }
 
   function updateParticles(dt) {
-    // Explosion
     for (let i = explosionParticles.length - 1; i >= 0; i--) {
       const item = explosionParticles[i];
       if (item.isLight) {
@@ -1335,13 +1239,12 @@ const SIM = (() => {
         item._life -= dt * item._decay;
         item.position.add(item._vel);
         item._vel.y -= item._gravity || 0;
-        if (item._rot) item.rotation.x += item._rot.x; // shard rotation
+        if (item._rot) item.rotation.x += item._rot.x;
         item.material.opacity = Math.max(0, item._type === 'smoke' ? item._life * 0.6 : item._life);
         if (item._life <= 0) { scene.remove(item); explosionParticles.splice(i, 1); }
       }
     }
 
-    // Fibers
     for (let i = fiberParticles.length - 1; i >= 0; i--) {
       const item = fiberParticles[i];
       if (item.isLight) {
@@ -1373,7 +1276,6 @@ const SIM = (() => {
       camera.position.y = 8 + Math.sin(t * 1.2) * 2;
       camera.lookAt(0, 3, 0);
     } else if (cameraMode === 'swarm-zoom') {
-      // Zoom to distant swarm
       const target = droneSwarmCenter.clone().add(new THREE.Vector3(-15, 5, 15));
       camera.position.lerp(target, dt * 1.0);
       camera.lookAt(droneSwarmCenter.x, droneSwarmCenter.y, droneSwarmCenter.z);
@@ -1422,7 +1324,7 @@ const SIM = (() => {
   ════════════════════════════════════ */
   function startApproach() {
     simState = 'approach';
-    cameraMode = 'swarm-zoom'; // show distant swarm first
+    cameraMode = 'swarm-zoom';
     buildRadarScan();
 
     drones.forEach(d => {
@@ -1433,21 +1335,16 @@ const SIM = (() => {
       );
     });
 
-    // After 3s zoomed on swarm, pull back and trigger alert
     setTimeout(() => {
       cameraMode = 'launch';
       if (onAlertCb) onAlertCb();
     }, 3200);
   }
 
-      function launchRocket(mode) {
+  function launchRocket(mode) {
     killMode = mode;
     simState = 'launch';
 
-    // The rocket is already built and sitting loaded in the tube (see init()
-    // / resetSim()) -- reuse that same object instead of rebuilding it, so
-    // firing never causes it to pop into existence; it just starts moving
-    // from right where it was already resting.
     if (!rocketGroup) buildRocket();
 
     rocketGroup.visible = true;
@@ -1475,7 +1372,6 @@ const SIM = (() => {
       if (onRocketLaunchCb) onRocketLaunchCb();
     }, 700);
   }
-
 
   function getTrajectoryPoints() { return trajectoryPoints; }
   function getRocketPos() { return rocketPos; }
@@ -1517,7 +1413,7 @@ const SIM = (() => {
     dronePhase = 0;
 
     buildDroneSwarm();
-    buildRocket(); // reload a fresh rocket into the tube for the next run
+    buildRocket();
   }
 
   function onAlert(cb) { onAlertCb = cb; }
