@@ -1,7 +1,7 @@
-/* ═══════════════════════════════════════════
+/* ═══════════════════════════════════════
    MAELSTROM - THREE.JS 3D SIMULATION ENGINE v2
    Photorealistic terrain, detailed rocket, improved guidance
-   ═══════════════════════════════════════════ */
+   ═══════════════════════════════════════ */
 
 const SIM = (() => {
   let renderer, scene, camera, clock;
@@ -541,30 +541,53 @@ const SIM = (() => {
     /* ── TRIPOD-MOUNTED FIRE-CONTROL RADAR SYSTEM ── */
     // Attached directly to launchPod (tripod station structure)
     const radarMast = new THREE.Group();
-    radarMast.position.set(-1.15, tripodCenterY + 0.1, -0.65);
+    const mastX = -1.05;
+    const mastZ = -0.55;
+    radarMast.position.set(mastX, tripodCenterY + 0.18, mastZ);
     launchPod.add(radarMast);
 
-    // Tripod structural mounting arm / extension bracket welded to central tripod hub plate
-    const tripodBracket = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.14, 0.85), darkMat);
-    tripodBracket.position.set(0.4, 0.07, 0.32);
-    tripodBracket.castShadow = true;
-    radarMast.add(tripodBracket);
+    // Structural mounting arm bridging central tripod top plate directly to the radar mast base
+    const armX = mastX / 2;
+    const armZ = mastZ / 2;
+    const armLen = Math.sqrt(mastX * mastX + mastZ * mastZ) + 0.3;
+    const armAngle = Math.atan2(mastX, mastZ);
+
+    const tripodArm = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.16, armLen), darkMat);
+    tripodArm.position.set(armX, tripodCenterY + 0.12, armZ);
+    tripodArm.rotation.y = armAngle;
+    tripodArm.castShadow = true;
+    tripodArm.receiveShadow = true;
+    launchPod.add(tripodArm);
+
+    // Structural clamp collar connecting arm to tripod hub plate
+    const hubClamp = new THREE.Mesh(new THREE.CylinderGeometry(0.96, 0.98, 0.14, 24), darkMat);
+    hubClamp.position.set(0, tripodCenterY + 0.12, 0);
+    hubClamp.castShadow = true;
+    launchPod.add(hubClamp);
+
+    // Heavy-duty mast pedestal socket resting directly on the mounting arm
+    const mastSocket = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.25, 16), hullMat);
+    mastSocket.position.set(0, 0.05, 0);
+    mastSocket.castShadow = true;
+    radarMast.add(mastSocket);
 
     // Dual heavy-duty diagonal hydraulic support struts anchoring mast directly to tripod frame
-    const strut1 = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.95, 8), chromeMat);
-    strut1.position.set(0.35, -0.28, 0.15);
-    strut1.rotation.z = 0.58;
+    const strut1 = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1.1, 8), chromeMat);
+    strut1.position.set(0.18, -0.35, 0.12);
+    strut1.rotation.z = 0.52;
+    strut1.rotation.x = -0.2;
     strut1.castShadow = true;
     radarMast.add(strut1);
 
-    const strut2 = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.95, 8), chromeMat);
-    strut2.position.set(0.35, -0.28, 0.5);
-    strut2.rotation.z = 0.58;
+    const strut2 = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1.1, 8), chromeMat);
+    strut2.position.set(0.18, -0.35, -0.12);
+    strut2.rotation.z = 0.52;
+    strut2.rotation.x = 0.2;
     strut2.castShadow = true;
     radarMast.add(strut2);
 
     // Heavy-duty mast pedestal & gear housing
-    const mastBase = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.14, 1.4, 12), darkMat);
+    const mastBase = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 1.2, 12), darkMat);
     mastBase.position.y = 0.7;
     mastBase.castShadow = true;
     radarMast.add(mastBase);
