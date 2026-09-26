@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════
-   MAELSTROM - THREE.JS 3D SIMULATION ENGINE v2.1
-   Modified for upfront Hard/Soft kill selection & Shahed Target
+   MAELSTROM - THREE.JS 3D SIMULATION ENGINE v2
+   Photorealistic terrain, detailed rocket, improved guidance
    ═══════════════════════════════════════ */
 
 const SIM = (() => {
@@ -16,22 +16,23 @@ const SIM = (() => {
 
   // State
   let simState = 'idle';
-  let killMode = 'soft'; // Default; overridden in init()
+  let killMode = null;
   let missionTime = 0;
   let rocketPos = new THREE.Vector3();
   let rocketVel = new THREE.Vector3();
   let droneSwarmCenter = new THREE.Vector3();
   let trajectoryPoints = [];
   let launchOrigin = new THREE.Vector3();
-  let launchDir = new THREE.Vector3(0, 1, 0); 
-  
+  let launchDir = new THREE.Vector3(0, 1, 0); // world-space direction the launch tube (and loaded rocket) points
+  // Swarm manoeuvre: forward -> strafe right -> forward again, flat altitude.
   let dronePhase = 0;
-  const DRONE_STRAFE_START = 0.35; 
-  const DRONE_STRAFE_END   = 0.60; 
-  
+  const DRONE_STRAFE_START = 0.35; // fraction of totalFlightDistance where strafe begins
+  const DRONE_STRAFE_END   = 0.60; // fraction where strafe ends and forward resumes
+  // Initial forward direction
   const _swarmFwd   = new THREE.Vector3(-158, 0, 138).normalize();
+  // Right-hand perpendicular of _swarmFwd in XZ plane
   const _swarmRight = new THREE.Vector3(_swarmFwd.z, 0, -_swarmFwd.x);
-  const DRONE_START_ALT = 78;   
+  const DRONE_START_ALT = 78;   // fixed altitude — swarm flies flat
   let engineFlame, engineFlame2, engineLight;
   let rocketFired = false;
   let interceptDone = false;
@@ -74,8 +75,7 @@ const SIM = (() => {
   /* ════════════════════════════════════
      INIT
   ════════════════════════════════════ */
-  function init(canvasId, selectedMode = 'soft') {
-    killMode = selectedMode;
+  function init(canvasId) {
     const canvas = document.getElementById(canvasId);
     const W = canvas.parentElement.clientWidth;
     const H = canvas.parentElement.clientHeight - 24;
@@ -113,12 +113,9 @@ const SIM = (() => {
     buildSky();
     buildGround();
     buildMountains();
-    
-    // Builds singular Shahed drone or quadcopter swarm based on init mode
-    buildTarget(); 
-    
+    buildDroneSwarm();   // must exist first so the launch pod can be oriented to face it
     buildLaunchPod();
-    buildRocket();
+    buildRocket();       // rocket is loaded in the tube and visible from the very start
 
     window.addEventListener('resize', onResize);
     window.addEventListener('orientationchange', () => setTimeout(onResize, 200));
@@ -234,13 +231,15 @@ const SIM = (() => {
   }
 
   /* ════════════════════════════════════
-     GROUND
+     GROUND - procedural terrain
   ════════════════════════════════════ */
   const GROUND_TEX_BASE = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/sandy_gravel_02/sandy_gravel_02_';
   const ROCK_TEX_BASE   = 'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/rock_face_03/rock_face_03_';
 
   function loadRepeatingTexture(loader, url, repeatX, repeatY, isColorMap) {
-    const tex = loader.load(url, undefined, undefined, () => {});
+    const tex = loader.load(url, undefined, undefined, () => {
+      console.warn('[MAELSTROM] texture failed to load:', url);
+    });
     tex.wrapS = THREE.RepeatWrapping;
     tex.wrapT = THREE.RepeatWrapping;
     tex.repeat.set(repeatX, repeatY);
@@ -298,6 +297,9 @@ const SIM = (() => {
     });
   }
 
+  /* ════════════════════════════════════
+     DISTANT MOUNTAINS
+  ════════════════════════════════════ */
   function buildMountains() {
     const loader = new THREE.TextureLoader();
     loader.crossOrigin = 'anonymous';
@@ -335,7 +337,7 @@ const SIM = (() => {
   }
 
   /* ════════════════════════════════════
-     LAUNCH POD
+     LAUNCH POD - Tripod launcher station with launch tubes & tripod-mounted radar
   ════════════════════════════════════ */
   function buildLaunchPod() {
     launchPod = new THREE.Group();
@@ -345,6 +347,7 @@ const SIM = (() => {
 
     const yBase = fbm(-8 * 0.04, 8 * 0.04, 5) * 3.0 - fbm(-8 * 0.1 + 5, 8 * 0.1 + 5, 3) * 0.6;
 
+    // Rocket longitudinal reference points:
     const ROCKET_TAIL_Y = -6.05;
     const ROCKET_MUZZLE_Y = -0.35;
     const TUBE_LEN = ROCKET_MUZZLE_Y - ROCKET_TAIL_Y;
@@ -352,6 +355,7 @@ const SIM = (() => {
     const TUBE_INNER_R = 0.52;
     const ELEV_ANGLE = Math.PI / 6.5;
 
+    // Materials
     const hullMat    = new THREE.MeshStandardMaterial({ color: 0x4a5446, roughness: 0.55, metalness: 0.5 });
     const darkMat    = new THREE.MeshStandardMaterial({ color: 0x222725, roughness: 0.5, metalness: 0.7 });
     const chromeMat  = new THREE.MeshStandardMaterial({ color: 0x8899a6, roughness: 0.25, metalness: 0.85 });
@@ -361,41 +365,49 @@ const SIM = (() => {
     const dishMat    = new THREE.MeshStandardMaterial({ color: 0x5a6560, roughness: 0.4, metalness: 0.6, side: THREE.DoubleSide });
     const radomeMat  = new THREE.MeshStandardMaterial({ color: 0x333b38, roughness: 0.3, metalness: 0.8 });
 
+    /* ── TRIPOD BASE ASSEMBLY ── */
     const tripodCenterY = yBase + 0.85;
 
+    // Central structural hub
     const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.62, 0.85, 16), darkMat);
     hub.position.y = tripodCenterY - 0.2;
     hub.castShadow = true; hub.receiveShadow = true;
     launchPod.add(hub);
 
+    // Heavy-duty mounting platform plate on tripod hub
     const tripodTopPlate = new THREE.Mesh(new THREE.CylinderGeometry(0.92, 0.95, 0.12, 24), darkMat);
     tripodTopPlate.position.y = tripodCenterY + 0.18;
     tripodTopPlate.castShadow = true;
     launchPod.add(tripodTopPlate);
 
+    // 3 Heavy-duty Outrigger Tripod Legs spaced 120° apart
     for (let i = 0; i < 3; i++) {
       const legAngle = (i / 3) * Math.PI * 2;
       const legGroup = new THREE.Group();
       legGroup.rotation.y = legAngle;
       legGroup.position.set(0, tripodCenterY - 0.2, 0);
 
+      // Main structural leg beam
       const legLen = 2.2;
       const legBeam = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.22, legLen), hullMat);
       legBeam.position.set(0, -0.4, legLen / 2);
-      legBeam.rotation.x = 0.48; 
+      legBeam.rotation.x = 0.48; // angled down to terrain
       legBeam.castShadow = true; legBeam.receiveShadow = true;
       legGroup.add(legBeam);
 
+      // Hydraulic bracing strut
       const strut = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.2, 8), chromeMat);
       strut.position.set(0, -0.55, 0.65);
       strut.rotation.x = 0.22;
       legGroup.add(strut);
 
+      // Articulated ground footpad
       const footPad = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.42, 0.1, 12), blackMat);
       footPad.position.set(0, -0.85, 1.95);
       footPad.receiveShadow = true; footPad.castShadow = true;
       legGroup.add(footPad);
 
+      // Ground anchor screw / locking pin
       const screw = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.35, 8), darkMat);
       screw.position.set(0, -0.7, 1.95);
       legGroup.add(screw);
@@ -403,20 +415,24 @@ const SIM = (() => {
       launchPod.add(legGroup);
     }
 
+    /* ── Slew Bearing Ring ── */
     const slewRing = new THREE.Mesh(new THREE.CylinderGeometry(0.82, 0.86, 0.14, 32), darkMat);
     slewRing.position.y = tripodCenterY + 0.28;
     slewRing.castShadow = true;
     launchPod.add(slewRing);
 
+    /* ── Turret Yaw Group ── */
     const turretYaw = new THREE.Group();
     turretYaw.position.set(0, tripodCenterY + 0.33, 0);
     launchPod.add(turretYaw);
 
+    // Turret swivel base on tripod hub
     const turretBase = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.82, 0.28, 24), hullMat);
     turretBase.position.y = 0.14;
     turretBase.castShadow = true; turretBase.receiveShadow = true;
     turretYaw.add(turretBase);
 
+    // Side mounting pillars for elevation trunnions
     [-0.72, 0.72].forEach((tx) => {
       const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.75, 0.7), hullMat);
       pillar.position.set(tx, 0.55, 0.3);
@@ -430,20 +446,24 @@ const SIM = (() => {
       turretYaw.add(trunCap);
     });
 
+    // Central avionics housing box
     const eBox = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.45, 0.8), darkMat);
     eBox.position.set(0, 0.4, 0.1);
     eBox.castShadow = true;
     turretYaw.add(eBox);
 
+    // Hazard stripe trim on front
     const stripe = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.08, 0.82), hazardMat);
     stripe.position.set(0, 0.22, 0.1);
     turretYaw.add(stripe);
 
+    /* ── Elevation Cradle Group ── */
     const elevGroup = new THREE.Group();
     elevGroup.position.set(0, 0.82, 0.3);
     elevGroup.rotation.x = -ELEV_ANGLE;
     turretYaw.add(elevGroup);
 
+    // Cradle frame & longitudinal mounting rails
     [-0.58, 0.58].forEach((cx) => {
       const rail = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, TUBE_LEN + 0.4), darkMat);
       rail.position.set(cx, -0.05, TUBE_LEN / 2);
@@ -451,6 +471,7 @@ const SIM = (() => {
       elevGroup.add(rail);
     });
 
+    // Twin hydraulic elevation cylinders
     [-0.45, 0.45].forEach((rx) => {
       const ram = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.9, 10), chromeMat);
       ram.position.set(rx, -0.38, 0.15);
@@ -458,8 +479,10 @@ const SIM = (() => {
       turretYaw.add(ram);
     });
 
+    // ── Launch Tubes (Canisters) ──
     const tubeXOffsets = [0.34, -0.34];
     tubeXOffsets.forEach((tx, idx) => {
+      // Cylindrical Launch Canister
       const outerTube = new THREE.Mesh(
         new THREE.CylinderGeometry(TUBE_OUTER_R, TUBE_OUTER_R * 1.03, TUBE_LEN, 24, 1, false),
         hullMat
@@ -469,6 +492,7 @@ const SIM = (() => {
       outerTube.castShadow = true;
       elevGroup.add(outerTube);
 
+      // Bore liner
       const bore = new THREE.Mesh(
         new THREE.CylinderGeometry(TUBE_INNER_R, TUBE_INNER_R, TUBE_LEN - 0.06, 20, 1, true),
         boreMat
@@ -477,6 +501,7 @@ const SIM = (() => {
       bore.position.set(tx, 0, TUBE_LEN / 2);
       elevGroup.add(bore);
 
+      // Muzzle collar and breach cap
       const muzzleRim = new THREE.Mesh(new THREE.TorusGeometry(TUBE_OUTER_R * 0.95, 0.048, 10, 28), darkMat);
       muzzleRim.position.set(tx, 0, TUBE_LEN);
       elevGroup.add(muzzleRim);
@@ -486,6 +511,7 @@ const SIM = (() => {
       breachCap.position.set(tx, 0, 0.02);
       elevGroup.add(breachCap);
 
+      // Reinforcement collars & hazard rings
       for (let b = 0; b < 4; b++) {
         const band = new THREE.Mesh(new THREE.TorusGeometry(TUBE_OUTER_R * 1.02, 0.035, 8, 24), darkMat);
         band.position.set(tx, 0, 0.4 + b * (TUBE_LEN - 0.8) / 3);
@@ -496,6 +522,7 @@ const SIM = (() => {
       tipRing.position.set(tx, 0, TUBE_LEN - 0.35);
       elevGroup.add(tipRing);
 
+      // Reference point for rocket placement in Tube 0
       if (idx === 0) {
         const breachPoint = new THREE.Object3D();
         breachPoint.position.set(tx, 0, 0);
@@ -504,18 +531,22 @@ const SIM = (() => {
       }
     });
 
+    // Structural tie-bars between tubes
     for (let b = 0; b < 3; b++) {
       const brace = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.06, 0.1), darkMat);
       brace.position.set(0, 0, 0.5 + b * (TUBE_LEN - 0.9) / 2);
       elevGroup.add(brace);
     }
 
+    /* ── TRIPOD-MOUNTED FIRE-CONTROL RADAR SYSTEM ── */
+    // Attached directly to launchPod (tripod station structure)
     const radarMast = new THREE.Group();
     const mastX = -1.05;
     const mastZ = -0.55;
     radarMast.position.set(mastX, tripodCenterY + 0.18, mastZ);
     launchPod.add(radarMast);
 
+    // Structural mounting arm bridging central tripod top plate directly to the radar mast base
     const armX = mastX / 2;
     const armZ = mastZ / 2;
     const armLen = Math.sqrt(mastX * mastX + mastZ * mastZ) + 0.3;
@@ -528,16 +559,19 @@ const SIM = (() => {
     tripodArm.receiveShadow = true;
     launchPod.add(tripodArm);
 
+    // Structural clamp collar connecting arm to tripod hub plate
     const hubClamp = new THREE.Mesh(new THREE.CylinderGeometry(0.96, 0.98, 0.14, 24), darkMat);
     hubClamp.position.set(0, tripodCenterY + 0.12, 0);
     hubClamp.castShadow = true;
     launchPod.add(hubClamp);
 
+    // Heavy-duty mast pedestal socket resting directly on the mounting arm
     const mastSocket = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.25, 16), hullMat);
     mastSocket.position.set(0, 0.05, 0);
     mastSocket.castShadow = true;
     radarMast.add(mastSocket);
 
+    // Dual heavy-duty diagonal hydraulic support struts anchoring mast directly to tripod frame
     const strut1 = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1.1, 8), chromeMat);
     strut1.position.set(0.18, -0.35, 0.12);
     strut1.rotation.z = 0.52;
@@ -552,31 +586,37 @@ const SIM = (() => {
     strut2.castShadow = true;
     radarMast.add(strut2);
 
+    // Heavy-duty mast pedestal & gear housing
     const mastBase = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.15, 1.2, 12), darkMat);
     mastBase.position.y = 0.7;
     mastBase.castShadow = true;
     radarMast.add(mastBase);
 
+    // Radar Azimuth Rotator Head (`radarDish` continuously rotates 360° around Y-axis)
     radarDish = new THREE.Group();
     radarDish.position.set(0, 1.42, 0);
     radarMast.add(radarDish);
 
+    // Rotator hub motor box
     const motorBox = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.24, 0.32), radomeMat);
     motorBox.castShadow = true;
     radarDish.add(motorBox);
 
+    // Radar dish back-frame & yoke arm
     const yokeArm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.38, 0.26), darkMat);
     yokeArm.position.set(0, 0.22, -0.05);
     yokeArm.rotation.x = -0.15;
     radarDish.add(yokeArm);
 
+    // Realistic Parabolic Dish Reflector Mesh
     const dishReflectorGeo = new THREE.SphereGeometry(0.54, 24, 18, 0, Math.PI * 2, 0, Math.PI * 0.42);
     const dishReflector = new THREE.Mesh(dishReflectorGeo, dishMat);
     dishReflector.position.set(0, 0.42, 0.12);
-    dishReflector.rotation.x = -Math.PI * 0.42;
+    dishReflector.rotation.x = -Math.PI * 0.42; // Tilted upwards towards sky
     dishReflector.castShadow = true;
     radarDish.add(dishReflector);
 
+    // Dish rear structural reinforcement ribs
     for (let r = 0; r < 4; r++) {
       const rib = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.52, 0.12), darkMat);
       rib.rotation.z = (r / 4) * Math.PI;
@@ -584,6 +624,7 @@ const SIM = (() => {
       radarDish.add(rib);
     }
 
+    // Feedhorn focal support tripod (3 struts holding transceiver horn)
     for (let s = 0; s < 3; s++) {
       const strutAngle = (s / 3) * Math.PI * 2;
       const fStrut = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.48, 6), darkMat);
@@ -593,15 +634,18 @@ const SIM = (() => {
       radarDish.add(fStrut);
     }
 
+    // Feedhorn Transceiver / Waveguide Box
     const feedHorn = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.055, 0.16, 10), radomeMat);
     feedHorn.position.set(0, 0.42, 0.44);
     feedHorn.rotation.x = Math.PI / 2;
     radarDish.add(feedHorn);
 
+    // Counterweight at rear of dish
     const counterWeight = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.13, 0.13), darkMat);
     counterWeight.position.set(0, 0.38, -0.24);
     radarDish.add(counterWeight);
 
+    // Radar active status green LED indicator
     const radarLED = new THREE.Mesh(
       new THREE.SphereGeometry(0.028, 8, 8),
       new THREE.MeshBasicMaterial({ color: 0x00ff66 })
@@ -609,6 +653,7 @@ const SIM = (() => {
     radarLED.position.set(0, 0.74, 0.1);
     radarDish.add(radarLED);
 
+    /* ── Traverse Turret to Face Drone Swarm Target ── */
     const toSwarmFlat = new THREE.Vector3(droneSwarmCenter.x - podBasePos.x, 0, droneSwarmCenter.z - podBasePos.z);
     const yaw = toSwarmFlat.lengthSq() > 1e-6 ? Math.atan2(toSwarmFlat.x, toSwarmFlat.z) : 0;
     turretYaw.rotation.y = yaw;
@@ -619,6 +664,7 @@ const SIM = (() => {
       Math.cos(yaw) * Math.cos(ELEV_ANGLE)
     ).normalize();
 
+    // Resolve launch origin from Tube 0 breach point
     launchPod.updateMatrixWorld(true);
     const breachWorld = new THREE.Vector3();
     elevGroup.userData.breachPoint.getWorldPosition(breachWorld);
@@ -626,7 +672,7 @@ const SIM = (() => {
   }
 
   /* ════════════════════════════════════
-     ROCKET
+     ROCKET - detailed geometry
   ════════════════════════════════════ */
   function buildRocket() {
     rocketGroup = new THREE.Group();
@@ -637,18 +683,21 @@ const SIM = (() => {
     const noseMat  = new THREE.MeshStandardMaterial({ color: 0x334455, roughness: 0.18, metalness: 0.9 });
     const nozzleMat= new THREE.MeshStandardMaterial({ color: 0x1a2028, roughness: 0.3, metalness: 0.95 });
 
+    // ── Hemispherical Nose Cone
     const noseGeo = new THREE.SphereGeometry(0.45, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.5);
     const nose = new THREE.Mesh(noseGeo, noseMat);
     nose.position.y = 3.3; 
     nose.castShadow = true;
     rocketGroup.add(nose);
 
+    // ── Forward body
     const bodyGeo = new THREE.CylinderGeometry(0.45, 0.45, 5.4, 24);
     const body = new THREE.Mesh(bodyGeo, bodyMat);
     body.position.y = 0.6; 
     body.castShadow = true;
     rocketGroup.add(body);
 
+    // Paint stripe / panel lines on body
     const stripe1 = new THREE.Mesh(
       new THREE.CylinderGeometry(0.452, 0.452, 0.12, 24, 1, true),
       new THREE.MeshStandardMaterial({ color: 0x1a2a3a, roughness: 0.3, metalness: 0.7 })
@@ -659,17 +708,20 @@ const SIM = (() => {
     stripe2.position.y = -0.6;
     rocketGroup.add(stripe2);
 
+    // ── Warhead section indicator ring
     const wring = new THREE.Mesh(new THREE.TorusGeometry(0.455, 0.025, 8, 24), new THREE.MeshStandardMaterial({ color: 0xff4400, roughness: 0.3, metalness: 0.6 }));
     wring.position.y = 2.1;
     wring.rotation.x = Math.PI / 2;
     rocketGroup.add(wring);
 
+    // ── Engine section
     const engGeo = new THREE.CylinderGeometry(0.45, 0.42, 3.0, 24);
     const eng = new THREE.Mesh(engGeo, engineMat);
     eng.position.y = -3.6;
     eng.castShadow = true;
     rocketGroup.add(eng);
 
+    // Engine detail rings
     for (let i = 0; i < 4; i++) {
       const ering = new THREE.Mesh(
         new THREE.TorusGeometry(0.45 - i * 0.005, 0.018, 8, 24),
@@ -680,6 +732,7 @@ const SIM = (() => {
       rocketGroup.add(ering);
     }
 
+    // ── Nozzle - converging-diverging bell
     const nozzlePts = [];
     for (let i = 0; i <= 24; i++) {
       const t = i / 24;
@@ -693,6 +746,7 @@ const SIM = (() => {
     nozzle.castShadow = true;
     rocketGroup.add(nozzle);
 
+    // ── FIXED FINS * 4 - clipped delta
     for (let i = 0; i < 4; i++) {
       const orbitalAngle = (i / 4) * Math.PI * 2;
       const fxGrp = new THREE.Group();
@@ -703,6 +757,7 @@ const SIM = (() => {
       rocketGroup.add(fxGrp);
     }
 
+    // ── CONTROL FINS * 4 - rectangular, all-moving
     const ctrlFinGroups = [];
     for (let i = 0; i < 4; i++) {
       const orbitalAngle = (i / 4) * Math.PI * 2;
@@ -717,6 +772,7 @@ const SIM = (() => {
     }
     rocketGroup._ctrlFins = ctrlFinGroups;
 
+    // ── Engine flame
     const flameMat1 = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 });
     const flameMat2 = new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.75 });
     const flameMat3 = new THREE.MeshBasicMaterial({ color: 0xff3300, transparent: true, opacity: 0.5, side: THREE.BackSide });
@@ -795,96 +851,33 @@ const SIM = (() => {
   }
 
   /* ════════════════════════════════════
-     TARGET: Swarm or Shahed
+     DRONE SWARM - placed far away
   ════════════════════════════════════ */
-  function buildTarget() {
+  function buildDroneSwarm() {
     const swarmCenter = new THREE.Vector3(150, 78, -130);
     droneSwarmCenter.copy(swarmCenter);
 
-    if (killMode === 'hard') {
-      const shahed = createShahedMesh();
-      shahed.position.copy(swarmCenter);
-      shahed._basePos = shahed.position.clone();
-      shahed._dynamicBase = shahed.position.clone();
-      shahed._vel = new THREE.Vector3(0, 0, 0);
-      shahed._alive = true;
-      shahed._fallVel = 0;
-      scene.add(shahed);
-      drones.push(shahed);
-    } else {
-      const droneOffsets = [
-        [0,0,0],[4,1.5,-2],[-3,2,2],[2,-2,4],[-2,3,-3],
-        [6,-1,3],[-4,-2,-3],[3,3.5,-4],[-2,-3,3],[5,2,2],
-        [-5,1,-1],[1,-1.5,-5],[3.5,2.5,1],[-1,3.5,3]
-      ];
+    const droneOffsets = [
+      [0,0,0],[4,1.5,-2],[-3,2,2],[2,-2,4],[-2,3,-3],
+      [6,-1,3],[-4,-2,-3],[3,3.5,-4],[-2,-3,3],[5,2,2],
+      [-5,1,-1],[1,-1.5,-5],[3.5,2.5,1],[-1,3.5,3]
+    ];
 
-      droneOffsets.forEach(([dx, dy, dz]) => {
-        const drone = buildDetailedDrone();
-        drone.position.set(swarmCenter.x + dx, swarmCenter.y + dy, swarmCenter.z + dz);
-        drone._basePos = drone.position.clone();
-        drone._dynamicBase = drone.position.clone();
-        drone._vel = new THREE.Vector3(
-          (Math.random() - 0.5) * 0.02,
-          (Math.random() - 0.5) * 0.01,
-          (Math.random() - 0.5) * 0.02
-        );
-        drone._alive = true;
-        drone._fallVel = 0;
-        scene.add(drone);
-        drones.push(drone);
-      });
-    }
-  }
-
-  function createShahedMesh() {
-    const group = new THREE.Group();
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0xc2c5cc, roughness: 0.6, metalness: 0.3 });
-    const darkMat = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.8 });
-
-    // Fuselage
-    const fuselage = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 4.0, 16), bodyMat);
-    fuselage.rotation.x = Math.PI / 2;
-    group.add(fuselage);
-
-    // Nose Cone
-    const nose = new THREE.Mesh(new THREE.SphereGeometry(0.35, 16, 16, 0, Math.PI * 2, 0, Math.PI / 2), bodyMat);
-    nose.rotation.x = Math.PI / 2;
-    nose.position.z = 2.0; 
-    group.add(nose);
-
-    // Delta Wing geometry
-    const wingShape = new THREE.Shape();
-    wingShape.moveTo(0, 1.5);
-    wingShape.lineTo(2.2, -1.8);
-    wingShape.lineTo(-2.2, -1.8);
-    wingShape.lineTo(0, 1.5);
-
-    const extSettings = { depth: 0.06, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 2 };
-    const wing = new THREE.Mesh(new THREE.ExtrudeGeometry(wingShape, extSettings), bodyMat);
-    wing.rotation.x = Math.PI / 2; 
-    wing.position.set(0, 0, -0.2); 
-    group.add(wing);
-
-    // Vertical Stabilizers
-    [-2.2, 2.2].forEach(x => {
-      const stab = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.8, 0.7), bodyMat);
-      stab.position.set(x, 0, -1.65);
-      group.add(stab);
+    droneOffsets.forEach(([dx, dy, dz]) => {
+      const drone = buildDetailedDrone();
+      drone.position.set(swarmCenter.x + dx, swarmCenter.y + dy, swarmCenter.z + dz);
+      drone._basePos = drone.position.clone();
+      drone._dynamicBase = drone.position.clone();
+      drone._vel = new THREE.Vector3(
+        (Math.random() - 0.5) * 0.02,
+        (Math.random() - 0.5) * 0.01,
+        (Math.random() - 0.5) * 0.02
+      );
+      drone._alive = true;
+      drone._fallVel = 0;
+      scene.add(drone);
+      drones.push(drone);
     });
-
-    // Pusher Propeller Engine
-    const engine = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.5, 12), darkMat);
-    engine.rotation.x = Math.PI / 2;
-    engine.position.z = -2.25;
-    group.add(engine);
-
-    const prop = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.06, 0.06), darkMat);
-    prop.position.z = -2.55;
-    group.add(prop);
-    group.userData.prop = prop; // Cached reference for rotation
-
-    group.scale.setScalar(1.2);
-    return group;
   }
 
   function buildDetailedDrone() {
@@ -897,17 +890,21 @@ const SIM = (() => {
     const ledMatR  = new THREE.MeshBasicMaterial({ color: 0xff2200 });
     const ledMatG  = new THREE.MeshBasicMaterial({ color: 0x00ff66 });
 
+    // Frame
     const frame = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.08, 0.35), frameMat);
     group.add(frame);
 
+    // Battery
     const battery = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.07, 0.28), new THREE.MeshStandardMaterial({ color: 0x223344, roughness: 0.6, metalness: 0.5 }));
     battery.position.y = -0.07;
     group.add(battery);
 
+    // Board
     const fcb = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.012, 0.1), new THREE.MeshStandardMaterial({ color: 0x1a3a1a, roughness: 0.5, metalness: 0.4 }));
     fcb.position.y = 0.05;
     group.add(fcb);
 
+    // 4 Arms
     const armDirs = [[1, 0, 1], [-1, 0, 1], [1, 0, -1], [-1, 0, -1]];
     armDirs.forEach(([ax, ay, az], idx) => {
       const armLen = 0.45;
@@ -942,6 +939,7 @@ const SIM = (() => {
       group.add(led);
     });
 
+    // Camera
     const camTurret = new THREE.Group();
     camTurret.position.set(0, -0.04, 0.16);
     const camBody = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.07, 0.065), camMat);
@@ -952,6 +950,7 @@ const SIM = (() => {
     camTurret.add(lens);
     group.add(camTurret);
 
+    // Antenna
     const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.005, 0.005, 0.2, 5), armMat);
     ant.position.set(0.1, 0.14, -0.05);
     group.add(ant);
@@ -960,7 +959,7 @@ const SIM = (() => {
     return group;
   }
 
-  function spawnTrail() { }
+  function spawnTrail() { /* trail removed */ }
 
   /* ════════════════════════════════════
      INTERCEPT EFFECTS
@@ -1083,6 +1082,7 @@ const SIM = (() => {
   ════════════════════════════════════ */
   function updateRadar(dt) {
     if (!radarDish) return;
+    // Continuous 360-degree azimuth rotation of the parabolic radar antenna
     radarDish.rotation.y += dt * 2.2;
     if (radarScanRing) {
       radarScanAngle += dt * 2.2;
@@ -1093,7 +1093,7 @@ const SIM = (() => {
   function updateDrones(dt) {
     const paused = rocketPaused && simState === 'flight';
 
-    if (rocketFired && totalFlightDistance > 0 && killMode === 'soft') {
+    if (rocketFired && totalFlightDistance > 0) {
       const frac = distanceTraveled / totalFlightDistance;
       if (dronePhase === 0 && frac >= DRONE_STRAFE_START) {
         dronePhase = 1;
@@ -1105,11 +1105,6 @@ const SIM = (() => {
     const ADVANCE_SPEED = 5;
 
     drones.forEach((drone, i) => {
-      // Propeller spin logic for Shahed
-      if (drone.userData.prop && drone._alive && !paused) {
-        drone.userData.prop.rotation.z += dt * 25;
-      }
-
       if (!drone._alive) {
         drone._fallVel += dt * 9.8 * 0.8;
         drone.position.y -= drone._fallVel * dt;
@@ -1124,18 +1119,12 @@ const SIM = (() => {
 
       const step = ADVANCE_SPEED * dt;
 
-      // Shaheds fly straight, avoiding the evasive strafe maneuver 
-      if (killMode === 'hard') {
+      if (dronePhase === 0 || dronePhase === 2) {
         drone._dynamicBase.x += _swarmFwd.x * step;
         drone._dynamicBase.z += _swarmFwd.z * step;
       } else {
-        if (dronePhase === 0 || dronePhase === 2) {
-          drone._dynamicBase.x += _swarmFwd.x * step;
-          drone._dynamicBase.z += _swarmFwd.z * step;
-        } else {
-          drone._dynamicBase.x += _swarmRight.x * step;
-          drone._dynamicBase.z += _swarmRight.z * step;
-        }
+        drone._dynamicBase.x += _swarmRight.x * step;
+        drone._dynamicBase.z += _swarmRight.z * step;
       }
 
       const offsetY = drone._basePos.y - DRONE_START_ALT;
@@ -1323,7 +1312,7 @@ const SIM = (() => {
   /* ════════════════════════════════════
      CAMERA
   ════════════════════════════════════ */
-  let cameraMode = 'orbit';
+  let cameraMode = 'orbit'; // orbit | swarm-zoom | launch | flight | intercept
 
   function updateCamera(dt) {
     cameraTimer += dt;
@@ -1387,15 +1376,11 @@ const SIM = (() => {
     buildRadarScan();
 
     drones.forEach(d => {
-      if (killMode === 'soft') {
-        d._vel.set(
-          (Math.random() - 0.5) * 0.015 - 0.006,
-          0,
-          (Math.random() - 0.5) * 0.015 + 0.012
-        );
-      } else {
-        d._vel.set(0,0,0);
-      }
+      d._vel.set(
+        (Math.random() - 0.5) * 0.015 - 0.006,
+        0,
+        (Math.random() - 0.5) * 0.015 + 0.012
+      );
     });
 
     setTimeout(() => {
@@ -1404,7 +1389,8 @@ const SIM = (() => {
     }, 3200);
   }
 
-  function launchRocket() {
+  function launchRocket(mode) {
+    killMode = mode;
     simState = 'launch';
 
     if (!rocketGroup) buildRocket();
@@ -1446,9 +1432,7 @@ const SIM = (() => {
   function isRocketPaused() { return rocketPaused; }
   function onStageReached(cb) { onStageCb = cb; }
 
-  function resetSim(newMode) {
-    if (newMode) killMode = newMode;
-
+  function resetSim() {
     drones.forEach(d => scene.remove(d));
     drones = [];
     trailParticles.forEach(p => scene.remove(p));
@@ -1461,6 +1445,7 @@ const SIM = (() => {
     if (radarScanRing) { scene.remove(radarScanRing); radarScanRing = null; }
 
     simState = 'idle';
+    killMode = null;
     missionTime = 0;
     rocketFired = false;
     interceptDone = false;
@@ -1475,7 +1460,7 @@ const SIM = (() => {
     cameraTimer = 0;
     dronePhase = 0;
 
-    buildTarget();
+    buildDroneSwarm();
     buildRocket();
   }
 
