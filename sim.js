@@ -17,25 +17,23 @@ const SIM = (() => {
 
   // State
   let simState = 'idle';
-  let killMode = 'soft'; // Default to soft kill until selected
+  let killMode = null; // Unselected by default; user must pick 'hard' or 'soft'
   let missionTime = 0;
   let rocketPos = new THREE.Vector3();
   let rocketVel = new THREE.Vector3();
   let droneSwarmCenter = new THREE.Vector3();
   let trajectoryPoints = [];
   let launchOrigin = new THREE.Vector3();
-  let launchDir = new THREE.Vector3(0, 1, 0); // world-space direction the launch tube (and loaded rocket) points
+  let launchDir = new THREE.Vector3(0, 1, 0); // world-space direction launch tube points
   
-  // Swarm / Target manoeuvre: forward -> strafe right -> forward again, flat altitude.
+  // Swarm / Target manoeuvre
   let dronePhase = 0;
-  const DRONE_STRAFE_START = 0.35; // fraction of totalFlightDistance where strafe begins
-  const DRONE_STRAFE_END   = 0.60; // fraction where strafe ends and forward resumes
+  const DRONE_STRAFE_START = 0.35;
+  const DRONE_STRAFE_END   = 0.60;
   
-  // Initial forward direction
   const _swarmFwd   = new THREE.Vector3(-158, 0, 138).normalize();
-  // Right-hand perpendicular of _swarmFwd in XZ plane
   const _swarmRight = new THREE.Vector3(_swarmFwd.z, 0, -_swarmFwd.x);
-  const DRONE_START_ALT = 78;   // fixed altitude — swarm/target flies flat
+  const DRONE_START_ALT = 78;
   const ELEV_ANGLE = Math.PI / 6.5;
   const ROCKET_TAIL_Y = -6.05;
 
@@ -60,6 +58,7 @@ const SIM = (() => {
   let onDoneCb = null;
   let onLoadProgressCb = null;
   let onAssetsReadyCb = null;
+  let onModeRequiredCb = null;
 
   // ─── Noise helpers ───
   function hash(n) { return Math.abs(Math.sin(n * 127.1 + 311.7) * 43758.5453) % 1; }
@@ -119,9 +118,12 @@ const SIM = (() => {
     buildSky();
     buildGround();
     buildMountains();
-    buildTargets(killMode); // Spawns target depending on initial mode
-    buildLaunchPod();
-    buildRocket();          // Rocket loaded in launch tube
+    buildLaunchPod(); // Built first so turret structures are available
+    buildRocket();
+
+    if (killMode) {
+      buildTargets(killMode);
+    }
 
     window.addEventListener('resize', onResize);
     window.addEventListener('orientationchange', () => setTimeout(onResize, 200));
@@ -358,7 +360,6 @@ const SIM = (() => {
     const TUBE_OUTER_R = 0.62;
     const TUBE_INNER_R = 0.52;
 
-    // Materials
     const hullMat    = new THREE.MeshStandardMaterial({ color: 0x4a5446, roughness: 0.55, metalness: 0.5 });
     const darkMat    = new THREE.MeshStandardMaterial({ color: 0x222725, roughness: 0.5, metalness: 0.7 });
     const chromeMat  = new THREE.MeshStandardMaterial({ color: 0x8899a6, roughness: 0.25, metalness: 0.85 });
@@ -368,7 +369,6 @@ const SIM = (() => {
     const dishMat    = new THREE.MeshStandardMaterial({ color: 0x5a6560, roughness: 0.4, metalness: 0.6, side: THREE.DoubleSide });
     const radomeMat  = new THREE.MeshStandardMaterial({ color: 0x333b38, roughness: 0.3, metalness: 0.8 });
 
-    /* ── TRIPOD BASE ASSEMBLY ── */
     const tripodCenterY = yBase + 0.85;
 
     const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.62, 0.85, 16), darkMat);
@@ -411,13 +411,11 @@ const SIM = (() => {
       launchPod.add(legGroup);
     }
 
-    /* ── Slew Bearing Ring ── */
     const slewRing = new THREE.Mesh(new THREE.CylinderGeometry(0.82, 0.86, 0.14, 32), darkMat);
     slewRing.position.y = tripodCenterY + 0.28;
     slewRing.castShadow = true;
     launchPod.add(slewRing);
 
-    /* ── Turret Yaw Group ── */
     turretYawGroup = new THREE.Group();
     turretYawGroup.position.set(0, tripodCenterY + 0.33, 0);
     launchPod.add(turretYawGroup);
@@ -449,7 +447,6 @@ const SIM = (() => {
     stripe.position.set(0, 0.22, 0.1);
     turretYawGroup.add(stripe);
 
-    /* ── Elevation Cradle Group ── */
     const elevGroup = new THREE.Group();
     elevGroup.position.set(0, 0.82, 0.3);
     elevGroup.rotation.x = -ELEV_ANGLE;
@@ -470,7 +467,6 @@ const SIM = (() => {
       turretYawGroup.add(ram);
     });
 
-    // ── Launch Tubes ──
     const tubeXOffsets = [0.34, -0.34];
     tubeXOffsets.forEach((tx, idx) => {
       const outerTube = new THREE.Mesh(
@@ -523,7 +519,6 @@ const SIM = (() => {
       elevGroup.add(brace);
     }
 
-    /* ── RADAR SYSTEM ── */
     const radarMast = new THREE.Group();
     const mastX = -1.05;
     const mastZ = -0.55;
@@ -609,6 +604,7 @@ const SIM = (() => {
     radarLED.position.set(0, 0.74, 0.1);
     radarDish.add(radarLED);
 
+    droneSwarmCenter.set(150, 78, -130);
     alignTurretToTarget();
   }
 
@@ -626,15 +622,22 @@ const SIM = (() => {
     ).normalize();
 
     launchPod.updateMatrixWorld(true);
-    const breachWorld = new THREE.Vector3();
-    elevGroupRef.userData.breachPoint.getWorldPosition(breachWorld);
-    launchOrigin.copy(breachWorld).addScaledVector(launchDir, -ROCKET_TAIL_Y);
+    if (elevGroupRef.userData.breachPoint) {
+      const breachWorld = new THREE.Vector3();
+      elevGroupRef.userData.breachPoint.getWorldPosition(breachWorld);
+      launchOrigin.copy(breachWorld).addScaledVector(launchDir, -ROCKET_TAIL_Y);
+    }
   }
 
   /* ════════════════════════════════════
      ROCKET
   ════════════════════════════════════ */
   function buildRocket() {
+    if (rocketGroup) {
+      scene.remove(rocketGroup);
+      rocketGroup = null;
+    }
+
     rocketGroup = new THREE.Group();
 
     const bodyMat   = new THREE.MeshStandardMaterial({ color: 0xb0c0d0, roughness: 0.25, metalness: 0.75 });
@@ -783,11 +786,20 @@ const SIM = (() => {
   }
 
   /* ════════════════════════════════════
-     TARGET SELECTION: HARD (SHAHED) VS SOFT (SWARM)
+     TARGET SELECTION & PREVIEW
   ════════════════════════════════════ */
   function setKillMode(mode) {
+    if (mode !== 'hard' && mode !== 'soft') return;
     killMode = mode;
     buildTargets(killMode);
+    
+    // Reposition rocket loaded in tube according to target orientation
+    if (rocketGroup && !rocketFired) {
+      rocketPos.copy(launchOrigin);
+      rocketGroup.position.copy(rocketPos);
+      const initialQuat = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), launchDir);
+      rocketGroup.quaternion.copy(initialQuat);
+    }
   }
 
   function buildTargets(mode) {
@@ -798,7 +810,6 @@ const SIM = (() => {
     droneSwarmCenter.copy(swarmCenter);
 
     if (mode === 'hard') {
-      // Hard kill: Singular Shahed Drone
       const shahed = buildShahedDrone();
       shahed.position.copy(swarmCenter);
       shahed._basePos = shahed.position.clone();
@@ -808,8 +819,7 @@ const SIM = (() => {
       shahed._fallVel = 0;
       scene.add(shahed);
       drones.push(shahed);
-    } else {
-      // Soft kill: Drone Swarm
+    } else if (mode === 'soft') {
       const droneOffsets = [
         [0,0,0],[4,1.5,-2],[-3,2,2],[2,-2,4],[-2,3,-3],
         [6,-1,3],[-4,-2,-3],[3,3.5,-4],[-2,-3,3],[5,2,2],
@@ -845,14 +855,12 @@ const SIM = (() => {
     const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1c18, roughness: 0.7, metalness: 0.5 });
     const propMat = new THREE.MeshStandardMaterial({ color: 0x0a0b0a, roughness: 0.8 });
 
-    // Fuselage / Central tapered body
     const bodyGeo = new THREE.CylinderGeometry(0.35, 0.45, 3.8, 16);
     const body = new THREE.Mesh(bodyGeo, bodyMat);
     body.rotation.x = Math.PI / 2;
     body.castShadow = true;
     group.add(body);
 
-    // Nose Cone
     const noseGeo = new THREE.ConeGeometry(0.35, 1.1, 16);
     const nose = new THREE.Mesh(noseGeo, bodyMat);
     nose.rotation.x = -Math.PI / 2;
@@ -860,7 +868,6 @@ const SIM = (() => {
     nose.castShadow = true;
     group.add(nose);
 
-    // Delta Wing Geometry
     const wingShape = new THREE.Shape();
     wingShape.moveTo(0, -1.8);
     wingShape.lineTo(3.2, 1.5);
@@ -876,7 +883,6 @@ const SIM = (() => {
     wings.castShadow = true;
     group.add(wings);
 
-    // Wingtip Vertical Stabilizers (Winglets)
     [-3.2, 3.2].forEach(x => {
       const stabShape = new THREE.Shape();
       stabShape.moveTo(0, 0);
@@ -891,7 +897,6 @@ const SIM = (() => {
       group.add(stab);
     });
 
-    // Rear Engine Hub & Pusher Propeller
     const engineHub = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.22, 0.4, 12), darkMat);
     engineHub.rotation.x = Math.PI / 2;
     engineHub.position.z = 2.0;
@@ -979,7 +984,7 @@ const SIM = (() => {
     return group;
   }
 
-  function spawnTrail() { /* trail disabled */ }
+  function spawnTrail() { /* disabled */ }
 
   /* ════════════════════════════════════
      INTERCEPT EFFECTS
@@ -1390,7 +1395,15 @@ const SIM = (() => {
      PUBLIC API
   ════════════════════════════════════ */
   function startApproach(mode) {
-    if (mode) setKillMode(mode);
+    if (mode) {
+      setKillMode(mode);
+    }
+    if (!killMode) {
+      console.warn('[MAELSTROM] Cannot start simulation: Select Hard Kill or Soft Kill first.');
+      if (onModeRequiredCb) onModeRequiredCb();
+      return false;
+    }
+
     simState = 'approach';
     cameraMode = 'swarm-zoom';
     buildRadarScan();
@@ -1407,10 +1420,20 @@ const SIM = (() => {
       cameraMode = 'launch';
       if (onAlertCb) onAlertCb();
     }, 3200);
+
+    return true;
   }
 
   function launchRocket(mode) {
-    if (mode) setKillMode(mode);
+    if (mode) {
+      setKillMode(mode);
+    }
+    if (!killMode) {
+      console.warn('[MAELSTROM] Cannot launch rocket: Select Hard Kill or Soft Kill first.');
+      if (onModeRequiredCb) onModeRequiredCb();
+      return false;
+    }
+
     simState = 'launch';
 
     if (!rocketGroup) buildRocket();
@@ -1439,6 +1462,8 @@ const SIM = (() => {
       cameraMode = 'flight';
       if (onRocketLaunchCb) onRocketLaunchCb();
     }, 700);
+
+    return true;
   }
 
   function getTrajectoryPoints() { return trajectoryPoints; }
@@ -1465,6 +1490,7 @@ const SIM = (() => {
     if (radarScanRing) { scene.remove(radarScanRing); radarScanRing = null; }
 
     simState = 'idle';
+    killMode = null; // Unselect mode on reset
     missionTime = 0;
     rocketFired = false;
     interceptDone = false;
@@ -1479,7 +1505,6 @@ const SIM = (() => {
     cameraTimer = 0;
     dronePhase = 0;
 
-    buildTargets(killMode);
     buildRocket();
   }
 
@@ -1489,6 +1514,7 @@ const SIM = (() => {
   function onDone(cb) { onDoneCb = cb; }
   function onLoadProgress(cb) { onLoadProgressCb = cb; }
   function onAssetsReady(cb) { onAssetsReadyCb = cb; }
+  function onModeRequired(cb) { onModeRequiredCb = cb; }
 
   return {
     init, setKillMode, startApproach, launchRocket, resetSim,
@@ -1496,6 +1522,6 @@ const SIM = (() => {
     getSimState, getMissionTime,
     pauseRocket, resumeRocket, isRocketPaused, onStageReached,
     onAlert, onRocketLaunch, onIntercept, onDone,
-    onLoadProgress, onAssetsReady
+    onLoadProgress, onAssetsReady, onModeRequired
   };
 })();
